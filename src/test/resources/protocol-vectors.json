@@ -1,0 +1,7 @@
+{
+  "description": "ECDSA P-256/SHA-256 primitive-format fixture produced with Node.js Web Crypto; private key discarded. Transaction-envelope interoperability is covered by transaction-webcrypto-vector.json.",
+  "canonicalPayload": "{\"eventId\":\"vector-1\",\"keyId\":\"org-farm-001-key-1\",\"networkId\":\"agritrace-test\",\"payload\":{\"batchCode\":\"MANGO-2026-0001\",\"quantity\":\"1200.000\"},\"purpose\":\"AGRI_TRACE_HARVEST\",\"signerOrganizationId\":\"org-farm-001\",\"type\":\"HARVESTED\"}",
+  "publicKeySpkiBase64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEK98gNT24K/M2IFySqsFukOcisx9bRHfs7wpzd9JDbuhzKDk6Ny6R1WmxvDutSOw6XTsz8r2eR6TydVNC2iBG6w==",
+  "signatureP1363Base64": "3qFOgaLWoeLnvJG5oDCJaVfqCMu2T7q+kJ0K75+5aTx/enNsncKgM2R7lhp0SrQPr+imehdq0geX2o6Hy3jjcw==",
+  "payloadHashHex": "a2f9eb086ed3b38e613415780dd3b3acb84a8a4e3c4d2eb5e8b4059c80a425e8"
+}

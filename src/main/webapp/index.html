@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#123d2b">
+    <title>AgriTrace | Supply-chain ledger</title>
+    <link rel="stylesheet" href="css/app.css">
+    <script src="js/app.js" defer></script>
+</head>
+<body>
+<header class="topbar">
+    <a class="brand" href="./" aria-label="AgriTrace home">
+        <span class="brand-mark" aria-hidden="true">A</span>
+        <span>AgriTrace<small>Supply-chain ledger</small></span>
+    </a>
+    <div class="topbar-meta">
+        <span id="network-label" class="network-label">Connecting to node…</span>
+        <span id="account-label" class="account-label" hidden></span>
+        <button id="logout-button" class="button button-quiet" type="button" hidden>Sign out</button>
+    </div>
+</header>
+
+<main class="page-shell">
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+
+    <section id="login-view" class="login-layout" aria-labelledby="login-title">
+        <div class="intro-card">
+            <p class="eyebrow">CONSORTIUM TRACEABILITY</p>
+            <h1 id="login-title">A clear record from harvest to shelf.</h1>
+            <p>Sign in to submit organization-signed events, coordinate shipments, and follow transactions on this node.</p>
+            <div class="intro-note">
+                <span class="note-icon" aria-hidden="true">i</span>
+                <span>Organization signing keys are imported and used locally in this browser. They are never sent to the node.</span>
+            </div>
+        </div>
+        <form id="login-form" class="panel login-card">
+            <p class="eyebrow">WELCOME BACK</p>
+            <h2>Sign in</h2>
+            <label for="username">Username</label>
+            <input id="username" name="username" autocomplete="username" required>
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" required>
+            <button class="button button-primary button-wide" type="submit">Continue</button>
+            <p class="form-hint">Use the account created for your organization by a node administrator.</p>
+        </form>
+    </section>
+
+    <section id="workspace" hidden>
+        <div class="workspace-heading">
+            <div>
+                <p class="eyebrow">NODE WORKSPACE</p>
+                <h1>Supply-chain operations</h1>
+            </div>
+            <span id="role-badge" class="role-badge"></span>
+        </div>
+
+        <div class="workspace-grid">
+            <aside class="side-panel">
+                <nav class="side-nav" aria-label="Workspace">
+                    <button type="button" class="nav-item is-active" data-view="events-view">Batch events</button>
+                    <button type="button" class="nav-item" data-view="shipment-view">Create shipment</button>
+                    <button type="button" class="nav-item" data-view="inbox-view">Carrier inbox</button>
+                    <button type="button" class="nav-item" data-view="lookup-view">Trace &amp; status</button>
+                </nav>
+                <section class="key-panel" aria-labelledby="key-title">
+                    <p class="eyebrow">LOCAL SIGNING</p>
+                    <h2 id="key-title">Organization key</h2>
+                    <p id="key-state" class="form-hint">Import a registered PKCS#8 P-256 private key to sign operations.</p>
+                    <label for="key-id">Registered key ID</label>
+                    <input id="key-id" autocomplete="off" placeholder="org-key-001">
+                    <label for="private-key-file">PKCS#8 private key</label>
+                    <input id="private-key-file" type="file" accept=".pem,.pk8,.der,application/pkcs8">
+                    <button id="import-key-button" class="button button-secondary button-wide" type="button">Import for this session</button>
+                    <p class="small-print">The key stays in memory until this tab is closed or you sign out. Use HTTPS and a trusted device.</p>
+                </section>
+            </aside>
+
+            <div class="content-panel">
+                <section id="events-view" class="workspace-view">
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">LEDGER WRITE</p>
+                            <h2>Submit a batch event</h2>
+                        </div>
+                        <span class="status-pill">Organization signature required</span>
+                    </div>
+                    <form id="event-form" class="form-grid">
+                        <div>
+                            <label for="event-type">Event type</label>
+                            <select id="event-type" required>
+                                <option value="HARVESTED">HARVESTED — create batch</option>
+                                <option value="PACKAGED">PACKAGED</option>
+                                <option value="RECEIVED">RECEIVED</option>
+                                <option value="SOLD">SOLD</option>
+                                <option value="CORRECTION">CORRECTION</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="batch-code">Batch code</label>
+                            <input id="batch-code" required maxlength="128" placeholder="MANGO-2026-0001">
+                        </div>
+                        <div class="form-span">
+                            <label for="event-data">Event data (JSON object)</label>
+                            <textarea id="event-data" rows="9" spellcheck="false" required></textarea>
+                            <span class="form-hint">Use strings for decimal quantities (for example, "1200.000"). Do not include confidential business data.</span>
+                        </div>
+                        <div class="form-span form-actions">
+                            <button class="button button-primary" type="submit">Sign and submit event</button>
+                        </div>
+                    </form>
+                    <div id="event-result" class="result-box" hidden></div>
+                </section>
+
+                <section id="shipment-view" class="workspace-view" hidden>
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">SENDER WORKFLOW</p>
+                            <h2>Propose a shipment</h2>
+                        </div>
+                        <span class="status-pill">Carrier endorsement required</span>
+                    </div>
+                    <form id="shipment-form" class="form-grid">
+                        <div>
+                            <label for="shipment-batch">Batch code</label>
+                            <input id="shipment-batch" required maxlength="128">
+                        </div>
+                        <div>
+                            <label for="carrier-organization">Carrier organization ID</label>
+                            <input id="carrier-organization" required>
+                        </div>
+                        <div>
+                            <label for="recipient-organization">Recipient organization ID</label>
+                            <input id="recipient-organization" required>
+                        </div>
+                        <div>
+                            <label for="shipment-expires">Proposal expires at</label>
+                            <input id="shipment-expires" type="datetime-local" required>
+                        </div>
+                        <div>
+                            <label for="from-province">From province</label>
+                            <input id="from-province" required>
+                        </div>
+                        <div>
+                            <label for="to-province">To province</label>
+                            <input id="to-province" required>
+                        </div>
+                        <div class="form-span form-actions">
+                            <button class="button button-primary" type="submit">Sign and send proposal</button>
+                        </div>
+                    </form>
+                    <div id="shipment-result" class="result-box" hidden></div>
+                </section>
+
+                <section id="inbox-view" class="workspace-view" hidden>
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">CARRIER WORKFLOW</p>
+                            <h2>Shipment inbox</h2>
+                        </div>
+                        <button id="refresh-inbox" class="button button-secondary" type="button">Refresh inbox</button>
+                    </div>
+                    <p class="form-hint">Proposals are node-local. Endorsing signs the immutable shipment payload and submits the SHIPPED transaction.</p>
+                    <div id="shipment-inbox" class="card-list"></div>
+                </section>
+
+                <section id="lookup-view" class="workspace-view" hidden>
+                    <div class="section-heading">
+                        <div>
+                            <p class="eyebrow">READ &amp; VERIFY</p>
+                            <h2>Trace a batch or transaction</h2>
+                        </div>
+                    </div>
+                    <form id="trace-form" class="inline-form">
+                        <label class="sr-only" for="trace-batch-code">Batch code</label>
+                        <input id="trace-batch-code" placeholder="Enter a public batch code" required>
+                        <button class="button button-primary" type="submit">View public trace</button>
+                    </form>
+                    <div id="trace-result" class="trace-result" hidden>
+                        <div class="trace-toolbar">
+                            <h3>Public trace</h3>
+                            <a id="trace-link" class="text-link" target="_blank" rel="noopener">Open public record</a>
+                        </div>
+                        <img id="trace-qr" class="trace-qr" alt="QR code linking to this public batch trace">
+                        <pre id="trace-json" class="json-result"></pre>
+                    </div>
+                    <form id="transaction-form" class="inline-form transaction-form">
+                        <label class="sr-only" for="transaction-id">Transaction ID</label>
+                        <input id="transaction-id" inputmode="text" pattern="[a-f0-9]{64}" placeholder="64-character transaction ID" required>
+                        <button class="button button-secondary" type="submit">Check transaction status</button>
+                    </form>
+                    <div id="transaction-result" class="result-box" hidden></div>
+                </section>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="page-footer">
+    <span>AgriTrace · Verified locally, shared across the consortium</span>
+    <span id="footer-network"></span>
+</footer>
+</body>
+</html>

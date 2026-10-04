@@ -1,0 +1,8 @@
+{
+  "description": "ECDSA P-256/SHA-256 signature produced with Node Web Crypto; private key discarded.",
+  "canonicalSigningPayload": "{\"batchCode\":\"MANGO-2026-0001\",\"data\":{\"productType\":\"Mango\",\"quantity\":\"1200.000\"},\"eventId\":\"event-1\",\"eventTime\":\"2026-10-01T02:00:00.000Z\",\"eventType\":\"HARVESTED\",\"keyId\":\"farm-key-1\",\"networkId\":\"agritrace-test\",\"purpose\":\"FARMER_HARVEST\",\"signerOrganizationId\":\"farm-1\"}",
+  "payloadHashHex": "d927a3d66605711d769222536be32addb577d9fabad3e47d3d75d3278623ee8c",
+  "transactionId": "ab7e56d79078bd56a7766948afc13a0a2c2918ccb1da2a58db7697898bf70f8a",
+  "publicKeySpkiBase64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEO69dh/w6Xkn+bfJ9TFsQtc/QRkKEIvIf4SRCKAXWm1h3qDKSOnE36hq9+h2vx1tVQXNoFhL+1fZ29Y5QY97v7w==",
+  "signatureP1363Base64": "2klNNxvfvi3FdbEczGxVw+mCynWFNPyyVLfdK96pUg8L/8p4K/OiiGi5+lYQ4ZGvoVAn+nOzYiClpj0aoXc1dQ=="
+}

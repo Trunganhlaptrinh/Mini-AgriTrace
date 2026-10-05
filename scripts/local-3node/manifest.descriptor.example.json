@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "environment": "development",
+  "networkId": "local-agritrace-3node",
+  "genesisAdminPublicKey": "REPLACE_WITH_BASE64_P256_SPKI_PUBLIC_KEY",
+  "difficulty": 1,
+  "genesisTimestamp": "2026-10-05T00:00:00.000Z",
+  "governanceEventTime": "2026-10-05T00:01:00.000Z",
+  "organizationBlockTimestamp": "2026-10-05T00:02:00.000Z",
+  "peerBlockTimestamp": "2026-10-05T00:03:00.000Z",
+  "organizations": [
+    {"organizationId":"org-farmer-a","organizationType":"FARMER","name":"Local Farmer","keyId":"key-farmer-a-v1","publicKey":"REPLACE_WITH_BASE64_P256_SPKI_PUBLIC_KEY"},
+    {"organizationId":"org-carrier-b","organizationType":"CARRIER","name":"Local Carrier","keyId":"key-carrier-b-v1","publicKey":"REPLACE_WITH_BASE64_P256_SPKI_PUBLIC_KEY"},
+    {"organizationId":"org-retailer-c","organizationType":"RETAILER","name":"Local Retailer","keyId":"key-retailer-c-v1","publicKey":"REPLACE_WITH_BASE64_P256_SPKI_PUBLIC_KEY"}
+  ],
+  "peers": [
+    {"peerId":"peer-node-a-farmer","organizationId":"org-farmer-a","endpoint":"https://localhost:8443/AgriTrace","tlsCertificateFingerprint":"REPLACE_WITH_64_LOWERCASE_HEX_SHA256_FINGERPRINT"},
+    {"peerId":"peer-node-b-carrier","organizationId":"org-carrier-b","endpoint":"https://localhost:8444/AgriTrace","tlsCertificateFingerprint":"REPLACE_WITH_64_LOWERCASE_HEX_SHA256_FINGERPRINT"},
+    {"peerId":"peer-node-c-retailer","organizationId":"org-retailer-c","endpoint":"https://localhost:8445/AgriTrace","tlsCertificateFingerprint":"REPLACE_WITH_64_LOWERCASE_HEX_SHA256_FINGERPRINT"}
+  ]
+}

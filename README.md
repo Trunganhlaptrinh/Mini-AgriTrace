@@ -72,7 +72,7 @@ The packaged WAR is `target/AgriTrace.war`. Deploy it to a compatible Servlet co
 
 ## Database and configuration
 
-For an application node, provision an independent MySQL instance and create the `agritrace` schema using `database/schema.sql`. The schema creates the database as `agritrace`. Existing installations must be inspected and upgraded using the appropriate migration exactly once; do not blindly rerun migrations 001 or 002. The application does not automatically seed a network or create demo data.
+For an application node, provision an independent MySQL instance and create the `agritrace` schema using `database/schema.sql`. The schema creates the database as `agritrace`. Existing installations must be inspected and upgraded using the appropriate migration exactly once; do not blindly rerun migrations 001, 002, or 003. The application does not automatically seed a network or create demo data.
 
 Database connection settings are supplied outside the repository:
 
@@ -110,11 +110,11 @@ The `status`/`initialize` commands use the configured node database and local P2
 
 - **Unit and web tests:** run as part of `mvn clean verify`.
 - **MySQL persistence tests:** `AGRITRACE_DB_INTEGRATION=true` and `AGRITRACE_DB_BLOCK_INTEGRATION=true` enable existing suites. Use only a disposable isolated DB; the transaction suite uses temporary records and cleanup but does not itself prove DB isolation.
-- **Bootstrap recovery integration test:** separately opt in with `AGRITRACE_BOOTSTRAP_IT_ENABLED=true` and the dedicated settings documented in the operator guide. It requires a separate MySQL instance, the `agritrace` catalog, and a dedicated marker row. It does not fall back to `AGRITRACE_DB_URL` and never drops/recreates a database.
+- **Bootstrap recovery integration test:** separately opt in with `AGRITRACE_BOOTSTRAP_IT_ENABLED=true` and the dedicated settings documented in the operator guide. The test harness is hard-locked to `127.0.0.1:3306/agritrace_test` and a dedicated marker row; it does not fall back to `AGRITRACE_DB_URL` and never drops/recreates a database. Do not use the development catalog `agritrace`.
 - **Multi-node acceptance:** execute the live mTLS, convergence, fork, disconnect/retry, and restart scenarios in `docs/MULTI_NODE_ACCEPTANCE.md`. Unit tests do not replace this deployment verification.
 
 ## Current limitations
 
-Bootstrap state verification proves the stored network configuration, canonical blocks/transactions, replayed governance state, projection rows, node-local ADMIN record, and configured local peer certificate against the verified manifest's effective ledger state. The `environment` label and manifest signature bytes are not stored in the existing database schema; changing metadata while keeping the same network and ledger does not create a distinct database state. A durable exact manifest digest would require a separately approved schema migration.
+Bootstrap state verification proves the stored network configuration, canonical blocks/transactions, replayed governance state, projection rows, node-local ADMIN record, configured local peer certificate, canonical manifest digest, and environment against the verified signed manifest. Existing databases need migration 003 before they can use this bootstrap identity check; the migration does not backfill prior network rows, so operators must review existing state before adopting bootstrap verification.
 
 Live three-node mTLS, servlet-container trust setup, browser end-to-end workflows, and production operations (deployment, monitoring, backup/restore, upgrade rehearsals) still need environment-specific verification. See [the current project status](docs/AI/PROJECT_STATUS.md).

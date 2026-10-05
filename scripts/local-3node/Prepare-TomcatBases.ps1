@@ -1,0 +1,40 @@
+param([string]$ConfigPath=(Join-Path $env:LOCALAPPDATA 'AgriTrace\local-3node\nodes.psd1'))
+$ErrorActionPreference='Stop'
+$repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+$config=Import-PowerShellDataFile $ConfigPath
+$war=Join-Path $repoRoot 'target\AgriTrace.war'
+if(-not (Test-Path $war)){ throw 'Build target\AgriTrace.war before preparing Tomcat bases.' }
+if(-not (Test-Path (Join-Path $config.CatalinaHome 'bin\catalina.bat'))){ throw 'Configured CATALINA_HOME is not a Tomcat installation.' }
+$serverTemplate=Get-Content -Raw (Join-Path $PSScriptRoot 'server.xml.template')
+foreach($n in $config.Nodes){
+ foreach($field in 'AppServerKeyStorePath','AppServerKeyStorePasswordFile','P2pServerKeyStorePath','P2pServerKeyStorePasswordFile','P2pClientTrustStorePath'){
+  if(-not (Test-Path -LiteralPath $n[$field])){ throw "Node $($n.Id) prerequisite file is missing: $field" }
+ }
+ if($n.P2pClientTrustStorePassword -like 'SET_*' -or $n.JavaPeerTrustStorePassword -like 'SET_*'){
+  throw "Set node $($n.Id) truststore passwords in the external config file before rendering server.xml."
+ }
+ $base=[IO.Path]::GetFullPath($n.CatalinaBase)
+ if($base.StartsWith($repoRoot,[StringComparison]::OrdinalIgnoreCase)){ throw 'Every CATALINA_BASE must be outside the repository.' }
+ foreach($dir in 'conf','logs','temp','webapps','work'){ New-Item -ItemType Directory -Force -Path (Join-Path $base $dir) | Out-Null }
+ $server=Join-Path $base 'conf\server.xml'
+ if(Test-Path $server){ throw "Refusing to overwrite existing Tomcat config: $server" }
+ $template=$serverTemplate
+ $sourceConf=Join-Path $config.CatalinaHome 'conf'
+ foreach($item in Get-ChildItem -LiteralPath $sourceConf -File){
+  if($item.Name -eq 'server.xml'){continue}
+  $target=Join-Path (Join-Path $base 'conf') $item.Name
+  if(-not (Test-Path $target)){Copy-Item -LiteralPath $item.FullName -Destination $target}
+ }
+ $map=@{
+  '@SHUTDOWN_PORT@'=$n.ShutdownPort; '@APP_PORT@'=$n.AppPort; '@P2P_PORT@'=$n.P2pPort
+  '@APP_SERVER_KEYSTORE@'=$n.AppServerKeyStorePath; '@APP_SERVER_PASSWORD_FILE@'=$n.AppServerKeyStorePasswordFile
+  '@P2P_SERVER_KEYSTORE@'=$n.P2pServerKeyStorePath; '@P2P_SERVER_PASSWORD_FILE@'=$n.P2pServerKeyStorePasswordFile
+  '@P2P_CLIENT_TRUSTSTORE@'=$n.P2pClientTrustStorePath
+  '@P2P_CLIENT_TRUSTSTORE_PASSWORD@'=$n.P2pClientTrustStorePassword
+ }
+ foreach($token in $map.Keys){ $escaped=[Security.SecurityElement]::Escape([string]$map[$token]); $template=$template.Replace($token,$escaped) }
+ if($template -match '@[A-Z0-9_]+@'){ throw "Node $($n.Id) server.xml has unresolved values." }
+ [IO.File]::WriteAllText($server,$template,[Text.UTF8Encoding]::new($false))
+ Copy-Item -LiteralPath $war -Destination (Join-Path $base 'webapps\AgriTrace.war')
+}
+Write-Host 'Prepared three external CATALINA_BASE directories and copied the WAR. No Tomcat was started.'

@@ -12,10 +12,17 @@ CREATE TABLE network_config (
     genesis_timestamp DATETIME(3) NOT NULL,
     genesis_nonce BIGINT NOT NULL,
     genesis_admin_public_key TEXT NOT NULL,
+    bootstrap_manifest_digest CHAR(64) NULL,
+    bootstrap_environment VARCHAR(20) NULL,
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
     CONSTRAINT chk_network_config_singleton CHECK (id = 1),
     CONSTRAINT chk_network_pow_difficulty CHECK (initial_pow_difficulty BETWEEN 1 AND 16),
-    CONSTRAINT chk_network_genesis_nonce CHECK (genesis_nonce >= 0)
+    CONSTRAINT chk_network_genesis_nonce CHECK (genesis_nonce >= 0),
+    CONSTRAINT chk_bootstrap_manifest_identity CHECK (
+        (bootstrap_manifest_digest IS NULL AND bootstrap_environment IS NULL)
+        OR (bootstrap_manifest_digest REGEXP '^[0-9a-f]{64}$'
+            AND bootstrap_environment IN ('development', 'staging', 'production'))
+    )
 );
 
 CREATE TABLE blockchain_transactions (

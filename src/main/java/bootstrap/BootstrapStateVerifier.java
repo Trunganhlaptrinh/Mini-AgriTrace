@@ -50,10 +50,15 @@ public final class BootstrapStateVerifier {
                 return status(BootstrapStatus.State.INCONSISTENT, bundle, 0, 0, null,
                         "Network configuration singleton is inconsistent");
 
-            NetworkConfiguration stored = readNetworkConfiguration();
+            StoredNetworkConfiguration storedConfiguration = readNetworkConfiguration();
+            NetworkConfiguration stored = storedConfiguration.configuration();
             if (!bundle.network().equals(stored))
                 return status(BootstrapStatus.State.DIFFERENT_NETWORK, bundle, 0, 0, null,
                         "Stored network configuration differs from the signed manifest");
+            if (!manifestIdentityMatches(storedConfiguration.manifestDigest(),
+                    storedConfiguration.environment(), bundle))
+                return status(BootstrapStatus.State.DIFFERENT_NETWORK, bundle, 0, 0, null,
+                        "Stored bootstrap manifest identity differs from the signed manifest");
 
             BlockValidator validator = new BlockValidator(stored.networkId(), stored.initialPowDifficulty(),
                     stored.genesisHash(), stored.genesisAdminPublicKeyBytes());
@@ -123,16 +128,18 @@ public final class BootstrapStateVerifier {
         }
     }
 
-    private NetworkConfiguration readNetworkConfiguration() {
+    private StoredNetworkConfiguration readNetworkConfiguration() {
         try (Connection c = connections.getConnection()) {
             requireCatalog(c);
             try (PreparedStatement q = c.prepareStatement("""
                     SELECT network_id, genesis_hash, initial_pow_difficulty, genesis_timestamp,
-                           genesis_nonce, genesis_admin_public_key FROM network_config WHERE id=1
+                           genesis_nonce, genesis_admin_public_key,
+                           bootstrap_manifest_digest, bootstrap_environment
+                    FROM network_config WHERE id=1
                     """); ResultSet r = q.executeQuery()) {
                 if (!r.next()) throw new IllegalStateException("Network configuration singleton is missing");
-                return new NetworkConfiguration(r.getString(1), r.getString(2), r.getInt(3),
-                        r.getTimestamp(4).toInstant(), r.getLong(5), r.getString(6));
+                return new StoredNetworkConfiguration(new NetworkConfiguration(r.getString(1), r.getString(2), r.getInt(3),
+                        r.getTimestamp(4).toInstant(), r.getLong(5), r.getString(6)), r.getString(7), r.getString(8));
             }
         } catch (SQLException | IllegalArgumentException e) {
             throw new IllegalStateException("Stored network configuration is invalid", e);
@@ -289,6 +296,15 @@ public final class BootstrapStateVerifier {
         }
         return true;
     }
+
+    static boolean manifestIdentityMatches(String digest, String environment,
+                                           BootstrapManifestCodec.Verified bundle) {
+        return digest != null && environment != null
+                && digest.equals(bundle.manifestDigest()) && environment.equals(bundle.environment());
+    }
+
+    private record StoredNetworkConfiguration(NetworkConfiguration configuration,
+                                               String manifestDigest, String environment) { }
 
     private static int transactionCount(List<BlockRepository.StoredBlock> chain) {
         return chain.stream().mapToInt(s -> s.transactions().size()).sum();

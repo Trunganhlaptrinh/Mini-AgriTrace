@@ -20,12 +20,6 @@ public final class NetworkConfigDAO {
             FROM network_config
             WHERE id = 1
             """;
-    private static final String INSERT_CONFIGURATION = """
-            INSERT INTO network_config
-                (id, network_id, genesis_hash, initial_pow_difficulty, genesis_timestamp,
-                 genesis_nonce, genesis_admin_public_key)
-            VALUES (1, ?, ?, ?, ?, ?, ?)
-            """;
     private final ConnectionProvider connectionProvider;
 
     public NetworkConfigDAO() {
@@ -78,8 +72,12 @@ public final class NetworkConfigDAO {
     }
 
     /** Installs the one network identity row; refuses to overwrite any existing configuration. */
-    public void installForBootstrap(NetworkConfiguration configuration) {
+    public void installForBootstrap(NetworkConfiguration configuration, String manifestDigest, String environment) {
         Objects.requireNonNull(configuration, "configuration");
+        if (manifestDigest == null || !manifestDigest.matches("[0-9a-f]{64}")
+                || !("development".equals(environment) || "staging".equals(environment)
+                    || "production".equals(environment)))
+            throw new IllegalArgumentException("A valid bootstrap manifest digest and environment are required");
         try (Connection connection = connectionProvider.getConnection()) {
             connection.setAutoCommit(false);
             try {
@@ -87,7 +85,12 @@ public final class NetworkConfigDAO {
                      ResultSet result = check.executeQuery()) {
                     if (result.next()) throw new PersistenceException("Network configuration already exists");
                 }
-                try (PreparedStatement insert = connection.prepareStatement(INSERT_CONFIGURATION)) {
+                try (PreparedStatement insert = connection.prepareStatement("""
+                        INSERT INTO network_config
+                            (id, network_id, genesis_hash, initial_pow_difficulty, genesis_timestamp,
+                             genesis_nonce, genesis_admin_public_key, bootstrap_manifest_digest, bootstrap_environment)
+                        VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """)) {
                     insert.setString(1, configuration.networkId());
                     insert.setString(2, configuration.genesisHash());
                     insert.setInt(3, configuration.initialPowDifficulty());
@@ -95,6 +98,8 @@ public final class NetworkConfigDAO {
                             Calendar.getInstance(TimeZone.getTimeZone("UTC")));
                     insert.setLong(5, configuration.genesisNonce());
                     insert.setString(6, configuration.genesisAdminPublicKey());
+                    insert.setString(7, manifestDigest);
+                    insert.setString(8, environment);
                     if (insert.executeUpdate() != 1) throw new PersistenceException("Network configuration was not installed");
                 }
                 connection.commit();

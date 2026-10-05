@@ -274,6 +274,8 @@ Likely implementation surface, after explicit approval:
 
 ### MySQL integration tests
 
+**Execution record (2026-10-05):** BOOT-IT-01 passed on the dedicated marked `agritrace_test` database, including interruption/resume boundaries, repeat initialization, unsafe-state rejection, and metadata-only environment mismatch. Exact post-run verification found zero rows in all application tables; the marker remained. The development catalog was not used.
+
 - On an explicitly dedicated empty MySQL test DB, initialize config/genesis/governance, replay the complete chain, verify projections and the first local admin.
 - Initialize two/three independent DBs from the same immutable bundle; assert equal network tuple, block hashes/transaction IDs/governance registry, while local account credentials and node identity remain independent.
 - Exercise interrupted bootstrap/retry, duplicate execution, non-empty DB refusal, wrong DB/config refusal, and safe rollback/resume semantics.
@@ -295,7 +297,7 @@ The preferred design reuses existing tables (`network_config`, canonical blockch
 - First local admin should persist through `UserDAO` with `PasswordHasher`.
 - The bootstrap bundle/audit manifest can remain an external signed artifact; do not store private values or add schema columns by default.
 
-If implementation proves a durable per-DB bootstrap manifest digest, progress state, or admin first-login flag is required and cannot be derived from existing state, propose a separate schema/migration design before changing SQL. Preserve all migration 001/002 handling and do not rerun either automatically.
+Implementation later established the need for a durable manifest identity: BOOT-03 added `bootstrap_manifest_digest` and `bootstrap_environment` to `network_config` through migration 003 and the new-database schema. The migration is additive and leaves legacy rows NULL; it was not applied to the development database. The dedicated integration database was built from the current schema and BOOT-IT-01 verified manifest-identity mismatch behavior there. Preserve migration 001/002 handling and do not rerun any migration automatically.
 
 ## 26. Explicit non-goals
 

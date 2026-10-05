@@ -55,6 +55,30 @@ class BootstrapManifestCodecTest {
                 + "\"initialBlocks\":[],\"signature\":\"AA==\",\"unexpected\":true}"));
     }
 
+    @Test
+    void verifiesInitialBlocksAgainstConfiguredGenesisParent() throws Exception {
+        KeyPair pair = keyPair();
+        Instant genesisTime = Instant.parse("2025-01-01T00:00:00Z");
+        String networkId = "bootstrap-block-test";
+        var genesis = ProofOfWork.mine(networkId, 0, null, genesisTime, 1, List.of(), java.math.BigInteger.ZERO);
+        var initial = ProofOfWork.mine(networkId, 1, genesis.hash(), genesisTime.plusSeconds(1), 1,
+                List.of(), genesis.cumulativeWork());
+        var unsigned = new BootstrapManifest(1, "development", networkId,
+                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()), genesisTime,
+                genesis.header().nonce(), 1, genesis.hash(), List.of(
+                new BootstrapManifest.InitialBlock(initial.header().timestamp(), List.of(), initial.hash())), "AA==");
+        Signature signer = Signature.getInstance("SHA256withECDSAinP1363Format");
+        signer.initSign(pair.getPrivate()); signer.update(BootstrapManifestCodec.signingBytes(unsigned));
+        var signed = new BootstrapManifest(unsigned.schemaVersion(), unsigned.environment(), unsigned.networkId(),
+                unsigned.genesisAdminPublicKey(), unsigned.genesisTimestamp(), unsigned.genesisNonce(),
+                unsigned.difficulty(), unsigned.genesisHash(), unsigned.initialBlocks(),
+                Base64.getEncoder().encodeToString(signer.sign()));
+
+        var verified = BootstrapManifestCodec.verify(signed);
+        assertEquals(1, verified.expectedBlocks().size());
+        assertEquals(initial.hash(), verified.tipHash());
+    }
+
     private static KeyPair keyPair() throws Exception {
         var generator = KeyPairGenerator.getInstance("EC");
         generator.initialize(new ECGenParameterSpec("secp256r1"));

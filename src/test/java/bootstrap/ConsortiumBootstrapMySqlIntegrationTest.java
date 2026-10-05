@@ -28,6 +28,7 @@ import security.PasswordHasher;
 
 class ConsortiumBootstrapMySqlIntegrationTest {
     private record Fixture(String json, BootstrapManifestCodec.Verified verified,
+                           BootstrapManifest manifest, KeyPair adminKey,
                            String organizationId, String keyId, String peerId, String adminName) { }
 
     @Test
@@ -46,7 +47,7 @@ class ConsortiumBootstrapMySqlIntegrationTest {
         for (BootstrapCheckpoint target : stages) {
             Fixture fixture = fixture();
             try {
-                var verifier = new BootstrapStateVerifier(connections);
+                var verifier = new BootstrapStateVerifier(connections, BootstrapIntegrationDatabase.CATALOG);
                 assertEquals(BootstrapStatus.State.UNINITIALIZED, verifier.inspect(fixture.verified(), null).state(),
                         "Dedicated DB must be empty before each recovery scenario");
                 AtomicBoolean interrupted = new AtomicBoolean();
@@ -54,7 +55,7 @@ class ConsortiumBootstrapMySqlIntegrationTest {
                         new PasswordHasher(), ignored -> { }, checkpoint -> {
                             if (!interrupted.get() && target.equals(checkpoint)
                                     && interrupted.compareAndSet(false, true)) throw new SimulatedInterruption();
-                        });
+                        }, BootstrapIntegrationDatabase.CATALOG);
                 assertThrows(SimulatedInterruption.class,
                         () -> crashing.initialize(fixture.json(), fixture.adminName(), "test-password-1".toCharArray()));
                 assertTrue(interrupted.get());
@@ -67,7 +68,7 @@ class ConsortiumBootstrapMySqlIntegrationTest {
                 assertTrue(prefix.localPeerVerified());
 
                 ConsortiumBootstrapService resume = new ConsortiumBootstrapService(connections,
-                        new PasswordHasher(), ignored -> { });
+                        new PasswordHasher(), ignored -> { }, ignored -> { }, BootstrapIntegrationDatabase.CATALOG);
                 resume.initialize(fixture.json(), fixture.adminName(), "test-password-2".toCharArray());
                 BootstrapStatus complete = verifier.inspect(fixture.verified(), fixture.adminName());
                 assertEquals(BootstrapStatus.State.INITIALIZED, complete.state(), complete.toString());
@@ -87,10 +88,16 @@ class ConsortiumBootstrapMySqlIntegrationTest {
     }
 
     private static void verifyRejectedStates(ConnectionProvider connections, Fixture f) throws Exception {
-        var verifier = new BootstrapStateVerifier(connections);
+        var verifier = new BootstrapStateVerifier(connections, BootstrapIntegrationDatabase.CATALOG);
         Fixture other = fixture();
         assertEquals(BootstrapStatus.State.DIFFERENT_NETWORK,
                 verifier.inspect(other.verified(), null).state());
+
+        BootstrapManifest metadataVariant = signWithEnvironment(f.manifest(), f.adminKey(), "staging");
+        var metadataBundle = BootstrapManifestCodec.verify(metadataVariant);
+        assertEquals(f.verified().network(), metadataBundle.network());
+        assertEquals(f.verified().expectedBlocks(), metadataBundle.expectedBlocks());
+        assertEquals(BootstrapStatus.State.DIFFERENT_NETWORK, verifier.inspect(metadataBundle, f.adminName()).state());
 
         try (Connection c = connections.getConnection(); PreparedStatement u = c.prepareStatement(
                 "UPDATE blockchain_blocks SET nonce=nonce+1 WHERE block_hash=?")) {
@@ -164,7 +171,22 @@ class ConsortiumBootstrapMySqlIntegrationTest {
                 unsigned.genesisNonce(), unsigned.difficulty(), unsigned.genesisHash(), unsigned.initialBlocks(),
                 Base64.getEncoder().encodeToString(signature.sign()));
         String json = BootstrapManifestCodec.toJson(signed);
-        return new Fixture(json, BootstrapManifestCodec.verify(signed), organizationId, keyId, peerId, adminName);
+        return new Fixture(json, BootstrapManifestCodec.verify(signed), signed, admin,
+                organizationId, keyId, peerId, adminName);
+    }
+
+    private static BootstrapManifest signWithEnvironment(BootstrapManifest manifest, KeyPair key,
+            String environment) throws Exception {
+        BootstrapManifest unsigned = new BootstrapManifest(manifest.schemaVersion(), environment,
+                manifest.networkId(), manifest.genesisAdminPublicKey(), manifest.genesisTimestamp(),
+                manifest.genesisNonce(), manifest.difficulty(), manifest.genesisHash(),
+                manifest.initialBlocks(), "AA==");
+        Signature signer = Signature.getInstance("SHA256withECDSAinP1363Format");
+        signer.initSign(key.getPrivate()); signer.update(BootstrapManifestCodec.signingBytes(unsigned));
+        return new BootstrapManifest(unsigned.schemaVersion(), unsigned.environment(), unsigned.networkId(),
+                unsigned.genesisAdminPublicKey(), unsigned.genesisTimestamp(), unsigned.genesisNonce(),
+                unsigned.difficulty(), unsigned.genesisHash(), unsigned.initialBlocks(),
+                Base64.getEncoder().encodeToString(signer.sign()));
     }
 
     private static BootstrapManifest.InitialGovernance toSpec(GovernanceTransaction tx) {

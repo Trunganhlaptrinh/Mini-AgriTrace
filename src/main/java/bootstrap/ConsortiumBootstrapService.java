@@ -18,24 +18,32 @@ public final class ConsortiumBootstrapService {
     private final PasswordHasher passwordHasher;
     private final Consumer<BootstrapManifestCodec.Verified> localPeerVerifier;
     private final Consumer<BootstrapCheckpoint> checkpoint;
+    private final String expectedCatalog;
 
     public ConsortiumBootstrapService(ConnectionProvider connections, PasswordHasher passwordHasher) {
-        this(connections, passwordHasher, ConsortiumBootstrapService::requireLocalPeer, ignored -> { });
+        this(connections, passwordHasher, ConsortiumBootstrapService::requireLocalPeer, ignored -> { }, "agritrace");
     }
 
     /** Injection point for isolated tests; production CLI uses the certificate verifier above. */
     ConsortiumBootstrapService(ConnectionProvider connections, PasswordHasher passwordHasher,
                                Consumer<BootstrapManifestCodec.Verified> localPeerVerifier) {
-        this(connections, passwordHasher, localPeerVerifier, ignored -> { });
+        this(connections, passwordHasher, localPeerVerifier, ignored -> { }, "agritrace");
     }
 
     ConsortiumBootstrapService(ConnectionProvider connections, PasswordHasher passwordHasher,
                                Consumer<BootstrapManifestCodec.Verified> localPeerVerifier,
                                Consumer<BootstrapCheckpoint> checkpoint) {
+        this(connections, passwordHasher, localPeerVerifier, checkpoint, "agritrace");
+    }
+
+    ConsortiumBootstrapService(ConnectionProvider connections, PasswordHasher passwordHasher,
+                               Consumer<BootstrapManifestCodec.Verified> localPeerVerifier,
+                               Consumer<BootstrapCheckpoint> checkpoint, String expectedCatalog) {
         this.connections = Objects.requireNonNull(connections, "connections");
         this.passwordHasher = Objects.requireNonNull(passwordHasher, "passwordHasher");
         this.localPeerVerifier = Objects.requireNonNull(localPeerVerifier, "localPeerVerifier");
         this.checkpoint = Objects.requireNonNull(checkpoint, "checkpoint");
+        this.expectedCatalog = Objects.requireNonNull(expectedCatalog, "expectedCatalog");
     }
 
     public BootstrapManifestCodec.Verified validate(String json) {
@@ -55,7 +63,7 @@ public final class ConsortiumBootstrapService {
         if (username == null || username.isBlank() || username.length() > 100)
             throw new IllegalArgumentException("A valid local ADMIN username is required");
         localPeerVerifier.accept(bundle);
-        BootstrapStateVerifier stateVerifier = new BootstrapStateVerifier(connections);
+        BootstrapStateVerifier stateVerifier = new BootstrapStateVerifier(connections, expectedCatalog);
         BootstrapStatus before = stateVerifier.inspect(bundle, username);
         if (before.state() == BootstrapStatus.State.INITIALIZED) return;
         if (before.state() != BootstrapStatus.State.UNINITIALIZED
@@ -65,7 +73,8 @@ public final class ConsortiumBootstrapService {
         if (before.localAdminUsername() == null && (adminPassword == null || adminPassword.length == 0))
             throw new IllegalArgumentException("A new local ADMIN password is required");
         if (before.state() == BootstrapStatus.State.UNINITIALIZED) {
-            new NetworkConfigDAO(connections).installForBootstrap(bundle.network());
+            new NetworkConfigDAO(connections).installForBootstrap(bundle.network(),
+                    bundle.manifestDigest(), bundle.environment());
             checkpoint.accept(new BootstrapCheckpoint(BootstrapCheckpoint.Stage.AFTER_NETWORK_CONFIG, -1));
         }
         BlockValidator validator = new BlockValidator(bundle.network().networkId(),
@@ -99,7 +108,8 @@ public final class ConsortiumBootstrapService {
     public BootstrapStatus status(String json, String expectedAdminUsername) {
         try (BootstrapLock ignored = BootstrapLock.acquire(connections)) {
             BootstrapManifestCodec.Verified bundle = validate(json);
-            BootstrapStatus dbStatus = new BootstrapStateVerifier(connections).inspect(bundle, expectedAdminUsername);
+            BootstrapStatus dbStatus = new BootstrapStateVerifier(connections, expectedCatalog)
+                    .inspect(bundle, expectedAdminUsername);
             boolean peerVerified = true;
             String detail = dbStatus.detail();
             try { localPeerVerifier.accept(bundle); }

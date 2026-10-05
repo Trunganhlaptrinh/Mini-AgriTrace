@@ -54,4 +54,34 @@ class BootstrapStateVerifierTest {
                 () -> ConsortiumBootstrapService.requirePeerFingerprint(peer, "b".repeat(64)));
         assertDoesNotThrow(() -> ConsortiumBootstrapService.requirePeerFingerprint(peer, "a".repeat(64)));
     }
+
+    @Test
+    void manifestIdentityIncludesEnvironmentAndCanonicalManifestDigest() throws Exception {
+        var generator = KeyPairGenerator.getInstance("EC");
+        generator.initialize(new ECGenParameterSpec("secp256r1"));
+        var pair = generator.generateKeyPair();
+        Instant timestamp = Instant.parse("2025-01-01T00:00:00Z");
+        Block genesis = ProofOfWork.mine("identity-test", 0, null, timestamp, 1, List.of(), BigInteger.ZERO);
+        var development = signedManifest(pair, "development", genesis, timestamp);
+        var staging = signedManifest(pair, "staging", genesis, timestamp);
+        var devBundle = BootstrapManifestCodec.verify(development);
+        var stagingBundle = BootstrapManifestCodec.verify(staging);
+
+        assertTrue(BootstrapStateVerifier.manifestIdentityMatches(devBundle.manifestDigest(), "development", devBundle));
+        assertFalse(BootstrapStateVerifier.manifestIdentityMatches(devBundle.manifestDigest(), "staging", devBundle));
+        assertFalse(BootstrapStateVerifier.manifestIdentityMatches(stagingBundle.manifestDigest(), "staging", devBundle));
+        assertNotEquals(devBundle.manifestDigest(), stagingBundle.manifestDigest());
+    }
+
+    private static BootstrapManifest signedManifest(java.security.KeyPair pair, String environment,
+            Block genesis, Instant timestamp) throws Exception {
+        var unsigned = new BootstrapManifest(1, environment, "identity-test",
+                Base64.getEncoder().encodeToString(pair.getPublic().getEncoded()), timestamp,
+                genesis.header().nonce(), 1, genesis.hash(), List.of(), "AA==");
+        Signature signer = Signature.getInstance("SHA256withECDSAinP1363Format");
+        signer.initSign(pair.getPrivate()); signer.update(BootstrapManifestCodec.signingBytes(unsigned));
+        return new BootstrapManifest(unsigned.schemaVersion(), unsigned.environment(), unsigned.networkId(),
+                unsigned.genesisAdminPublicKey(), unsigned.genesisTimestamp(), unsigned.genesisNonce(),
+                unsigned.difficulty(), unsigned.genesisHash(), List.of(), Base64.getEncoder().encodeToString(signer.sign()));
+    }
 }

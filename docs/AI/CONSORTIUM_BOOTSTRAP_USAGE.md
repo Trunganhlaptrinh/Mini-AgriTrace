@@ -54,17 +54,27 @@ completed exact persisted state is `INITIALIZED`; running `initialize` again is 
 serializes bootstrap writers. A mismatch, corrupt chain, conflicting projection/peer certificate, or unrelated
 application data fails closed. The tool never clears, repairs, or migrates a target database.
 
-The existing schema does not store the full signed manifest digest. Verification therefore compares the
-manifest's effective persisted state; it cannot distinguish two signed files whose non-ledger metadata differs
-while network configuration and ledger state are identical. Persisting a full manifest digest would require a
-separately approved schema migration; this task does not change the schema or migrations.
+`network_config` stores the SHA-256 digest of the manifest's canonical signing bytes and its environment label.
+The digest covers every signed field except the signature bytes themselves. Bootstrap status requires both values
+to match; changing environment or any other signed manifest field makes an existing DB report
+`DIFFERENT_NETWORK`, even when the effective ledger is identical. The signature is always revalidated from the
+manifest supplied to the CLI.
+
+New databases receive these columns from `database/schema.sql`. Existing databases must first apply
+`database/migrations/003_add_bootstrap_manifest_identity.sql`. The migration leaves old rows NULL; it does not
+infer or backfill an identity from historical state. Consequently, an existing initialized row without a stored
+digest cannot be accepted by the bootstrap verifier as a matching bundle. Review and provision existing network
+rows deliberately before using this bootstrap flow. This project change adds the migration but does not apply it.
 
 ## Dedicated bootstrap integration database
 
 `ConsortiumBootstrapMySqlIntegrationTest` is separately opt-in and never falls back to the application's normal
-`AGRITRACE_DB_*` settings. It requires a dedicated disposable MySQL **instance** whose catalog is named
-`agritrace` (the catalog name in `database/schema.sql`). Do not use a developer, staging, or production instance.
-Apply `database/schema.sql` on that dedicated instance, then add this marker there:
+`AGRITRACE_DB_*` settings. It is hard-locked to `jdbc:mysql://127.0.0.1:3306/agritrace_test`; it rejects all
+other hosts/catalogs. Do not point it at `agritrace`, staging, or production. The repository's
+`database/schema.sql` intentionally creates/uses the development catalog `agritrace`; do not execute that file
+unchanged for these tests. Apply its current table definitions to the already-created `agritrace_test` catalog
+(omit/replace the leading `CREATE DATABASE ... agritrace` and `USE agritrace` directives), then add this marker
+there:
 
 ```sql
 CREATE TABLE _agritrace_bootstrap_it_guard (
@@ -77,14 +87,14 @@ VALUES (1, 'agritrace-bootstrap-it-only-v1');
 
 Configure the test shell below. The JDBC URL must not contain credentials; keep user/password in their separate
 variables. The test fails clearly if the opt-in/confirmation is missing, the URL equals the normal application
-URL, the catalog is not `agritrace`, the marker is missing/wrong, or the application tables are not empty at the
+URL, the catalog is not `agritrace_test`, the marker is missing/wrong, or the application tables are not empty at the
 start of a scenario. It never creates/drops the database or schema. Cleanup deletes only IDs created by the
 test; the isolation marker remains.
 
 ```powershell
 $env:AGRITRACE_BOOTSTRAP_IT_ENABLED = 'true'
 $env:AGRITRACE_BOOTSTRAP_IT_CONFIRM = 'USE_ONLY_DEDICATED_AGRITRACE_BOOTSTRAP_IT'
-$env:AGRITRACE_BOOTSTRAP_IT_JDBC_URL = 'jdbc:mysql://DEDICATED-TEST-HOST:3306/agritrace'
+$env:AGRITRACE_BOOTSTRAP_IT_JDBC_URL = 'jdbc:mysql://127.0.0.1:3306/agritrace_test'
 $env:AGRITRACE_BOOTSTRAP_IT_USERNAME = 'test-user'
 $env:AGRITRACE_BOOTSTRAP_IT_PASSWORD = '<set securely in the shell>'
 mvn -Dtest=ConsortiumBootstrapMySqlIntegrationTest test

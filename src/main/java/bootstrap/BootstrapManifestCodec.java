@@ -105,7 +105,8 @@ public final class BootstrapManifestCodec {
         var parent = blockchain.GenesisBlockFactory.configuredGenesis(network);
         var validator = new blockchain.BlockValidator(m.networkId(), m.difficulty(), m.genesisHash(),
                 network.genesisAdminPublicKeyBytes());
-        var context = blockchain.BlockValidationContext.genesis(blockchain.GovernanceRegistry.empty());
+        var context = new blockchain.BlockValidationContext(parent, java.util.Set.of(), java.util.Set.of(),
+                blockchain.GovernanceRegistry.empty(), java.util.Map.of(), java.util.Map.of());
         for (int i = 0; i < m.initialBlocks().size(); i++) {
             var spec = m.initialBlocks().get(i);
             if (spec.timestamp() == null || spec.timestamp().isBefore(parent.header().timestamp()))
@@ -130,7 +131,8 @@ public final class BootstrapManifestCodec {
             expectedBlocks.add(block);
         }
         return new Verified(network, blockchain.GenesisBlockFactory.configuredGenesis(network),
-                List.copyOf(blocks), previous, context.governanceRegistry(), List.copyOf(expectedBlocks));
+                List.copyOf(blocks), previous, context.governanceRegistry(), List.copyOf(expectedBlocks),
+                digest(m), m.environment());
     }
 
     private static void requireKeys(JsonObject o, String... names) {
@@ -138,5 +140,6 @@ public final class BootstrapManifestCodec {
     }
     public record Verified(NetworkConfiguration network, model.Block genesis,
                            List<List<GovernanceTransaction>> transactionsByBlock, String tipHash,
-                           blockchain.GovernanceRegistry registry, List<model.Block> expectedBlocks) { }
+                           blockchain.GovernanceRegistry registry, List<model.Block> expectedBlocks,
+                           String manifestDigest, String environment) { }
 }

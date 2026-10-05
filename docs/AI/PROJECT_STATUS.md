@@ -38,7 +38,7 @@ Servlets in `src/main/java/controller` map `/api/v1` HTTP routes. Services enfor
 
 Servlet annotations are the route mapping mechanism; no `web.xml` or Tomcat configuration is present in the project source tree. `NodeRuntimeListener` validates network/genesis configuration, reconstructs the runtime chain, and starts peer synchronization.
 
-An offline operator path exists in `bootstrap/ConsortiumBootstrapCli` and `ConsortiumBootstrapService`. It verifies the signed public manifest and deterministic genesis/initial blocks; `BootstrapStateVerifier` reads and validates the canonical ledger, transaction/status counts, governance projections/provenance, and local ADMIN. It classifies a database as uninitialized, exact-prefix resumable, initialized, inconsistent, different network/ledger, or unexpected data. `initialize` uses a MySQL named lock, checks the local peer/certificate before writes, resumes only a verified prefix through `Blockchain`/`BlockDAO`, and creates the local ADMIN through `PasswordHasher`/`UserDAO` once. The opt-in recovery integration test is implemented but requires its dedicated DB configuration and has not run in this session. A full manifest digest is not persisted; see Known Risks.
+An offline operator path exists in `bootstrap/ConsortiumBootstrapCli` and `ConsortiumBootstrapService`. It verifies the signed public manifest and deterministic genesis/initial blocks; `BootstrapStateVerifier` reads and validates the canonical ledger, transaction/status counts, governance projections/provenance, local ADMIN, and stored manifest digest/environment. It classifies a database as uninitialized, exact-prefix resumable, initialized, inconsistent, different network/manifest, or unexpected data. `initialize` uses a MySQL named lock, checks the local peer/certificate before writes, resumes only a verified prefix through `Blockchain`/`BlockDAO`, and creates the local ADMIN through `PasswordHasher`/`UserDAO` once. BOOT-IT-01 passed against the dedicated marked `agritrace_test` catalog. The test exposed and led to a fix for initial-block validation starting without the configured genesis parent.
 
 ### Database
 
@@ -46,7 +46,7 @@ An offline operator path exists in `bootstrap/ConsortiumBootstrapCli` and `Conso
 
 `blockchain_transactions` and `blockchain_blocks` persist ledger data. `transaction_pool` and `node_transaction_status` reflect node-local admission/confirmation. `organizations`, keys, peers, batches, and events are rebuildable projections. `users` and shipment proposal/signature records are node-local; user organization references intentionally do not cascade with projection rows. Block storage/reorganization and projection replacement are handled transactionally by `BlockDAO` and `CanonicalProjectionDAO`.
 
-Migrations 001 and 002 are present. Migration 001 removes foreign keys that would couple local records to re-buildable canonical projections and adds `users.organization_canonical`; `schema.sql` already contains that resulting shape for new databases. Migration 002 adds genesis timestamp/nonce fields to existing network configuration. Do not rerun either migration blindly. The schema does not seed the immutable network/genesis row; nodes need externally provisioned identical network and genesis values.
+Migrations 001, 002, and 003 are present. Migration 001 removes foreign keys that would couple local records to re-buildable canonical projections and adds `users.organization_canonical`; `schema.sql` already contains that resulting shape for new databases. Migration 002 adds genesis timestamp/nonce fields to existing network configuration. Migration 003 adds nullable bootstrap manifest digest/environment identity. Do not rerun migrations blindly. The schema does not seed the immutable network/genesis row; nodes need externally provisioned identical network and genesis values.
 
 ### Blockchain
 
@@ -127,22 +127,23 @@ These flows are traced from current route annotations, services, and DAOs. They 
 - Database name in schema: `agritrace`.
 - Important tables: `network_config`, `blockchain_transactions`, `blockchain_blocks`, `block_transactions`, `transaction_pool`, `node_transaction_status`, `organizations`, `organization_keys`, `authorized_peers`, `users`, `shipment_proposals`, `shipment_proposal_signatures`, `batches`, `batch_events`.
 - Canonical chain data and local application/workflow data are separated; canonical organization/batch data is rebuildable from validated chain history.
-- Migrations 001 and 002 exist; neither was executed in this task.
-- The earlier bootstrap implementation session ran the two opt-in MySQL tests, but did not verify their target isolation. `BlockMySqlIntegrationTest` checks for an empty target; `TransactionMySqlIntegrationTest` uses unique records and cleanup but does not itself require a dedicated/empty DB.
-- The final BOOT-02 `mvn clean verify` run explicitly disabled all MySQL opt-in flags for that Maven process, so no database was contacted by that run. The dedicated bootstrap DB settings/marker are not available.
-- A preceding elevated Maven run in this task executed the two older opt-in MySQL suites before the flags were disabled. Both test reports passed and their fixture cleanup completed, but their configured target was not independently verified as isolated. `TransactionMySqlIntegrationTest` does not require an empty dedicated DB. No follow-up DB query was performed.
+- Migrations 001, 002, and 003 exist; none were executed in this task. Migration 003 adds nullable bootstrap manifest digest/environment columns and intentionally does not backfill old network rows.
+- The development catalog `agritrace` was not contacted or modified during the BOOT-IT-01/DB-01 runs.
+- The dedicated local test catalog `agritrace_test` was created by applying the current schema table definitions without the schema file's development `CREATE DATABASE/USE agritrace` header, then adding the bootstrap isolation marker.
+- BOOT-IT-01, `BlockMySqlIntegrationTest`, and `TransactionMySqlIntegrationTest` ran separately against `agritrace_test` and passed. A final exact count found zero rows across application tables; the isolation marker remained.
+- Migration 003 was not executed as a migration; the test catalog was built from the current `schema.sql`, which already contains its new columns.
 
 ## 10. Test Status
 
-**Current verification (2026-10-05):** `mvn clean verify` completed successfully and packaged `target/AgriTrace.war`. Per-suite Surefire reports total **179 tests, 0 failures, 0 errors, 3 skipped**. The skipped tests are `ConsortiumBootstrapMySqlIntegrationTest`, `BlockMySqlIntegrationTest`, and `TransactionMySqlIntegrationTest`; database opt-in flags were disabled for this final run.
+**Latest full safe build (2026-10-05):** `mvn clean verify` completed successfully and packaged `target/AgriTrace.war`. Per-suite Surefire reports total **181 tests, 0 failures, 0 errors, 3 skipped**. In this full-suite invocation all database opt-in flags were disabled, so no database was contacted.
 
-- **Automated unit/Servlet/service tests:** 176 passed, including signature, genesis, malformed manifest, exact-prefix, and certificate-fingerprint unit tests.
-- **Automated MySQL integration:** all three database suites were skipped in the final verification. In an earlier elevated invocation the two older suites ran and passed, but their target isolation was not confirmed; their test fixture cleanup completed and no follow-up DB inspection was performed. Do not treat those earlier passes as proof of a dedicated test DB.
-- **Automated multi-node tests:** no live-node acceptance run. Script is a read-only probe; full disruption scenarios are manual.
-- **Browser/manual acceptance:** no current live browser/API workflow evidence.
+- **Automated unit/Servlet/service tests:** 178 passed, including initial-block-from-genesis validation, manifest identity, signature, genesis, malformed manifest, exact-prefix, and certificate-fingerprint unit tests.
+- **Automated MySQL integration:** BOOT-IT-01 passed (1 test); DB-01 passed (`BlockMySqlIntegrationTest`: 1; `TransactionMySqlIntegrationTest`: 1). All used only `agritrace_test`; both DB-01 tests passed in sequence. Exact post-run cleanup verification found zero application-table rows, and the marker remained. The full safe build skipped the three DB suites by design.
+- **Automated multi-node tests:** no live-node acceptance run. On 2026-10-05, preflight confirmed Tomcat10 is stopped, no listener was found on the expected local app/P2P ports, and no AGRITRACE/Tomcat environment settings were present. MySQL80 service is running, but that alone does not provide three isolated node databases. The read-only probe script parses without PowerShell syntax errors; it was not run because no node URLs or peer PFX identities were available. Full disruption scenarios remain manual/infrastructure-dependent.
+- **Browser/manual acceptance:** `node --check src/main/webapp/js/app.js` passed on 2026-10-05. No browser-to-API workflow was executed: Tomcat is stopped and no browser automation/browser binary is configured in this environment. Servlet unit tests run as part of the Maven suite, but they do not verify the browser UI.
 - **WAR build:** passed under Maven; the build target is Java 17, though this session's runtime was Java 25.
 
-Earlier sessions reported different build totals and MySQL outcomes. The current suite result above is the latest report; the older MySQL test target isolation remains unknown.
+Earlier sessions reported different build totals and MySQL outcomes. Current target isolation for BOOT-IT-01 and DB-01 is verified; the full clean build remains a separate no-DB test run.
 
 ## 11. Deployment State
 
@@ -153,14 +154,14 @@ Earlier sessions reported different build totals and MySQL outcomes. The current
 
 ## 12. Completed Features
 
-The following have meaningful automated verification in the current run: canonical transaction/block encoding and validation; business/governance validation; fork-choice logic at unit level; password hashing, login/security filters, peer authorization logic; Servlet/service tests for admin, batch, shipment, status, trace, and QR; wire codec and peer service tests; WAR compilation/package.
+The following have meaningful automated verification in the current run: canonical transaction/block encoding and validation; business/governance validation; fork-choice logic; password hashing, login/security filters, peer authorization logic; Servlet/service tests for admin, batch, shipment, status, trace, and QR; wire codec and peer service tests; BOOT-IT-01 recovery/identity cases; DB-01 block reorganization/projection and transaction persistence; WAR compilation/package.
 
 “Completed” here means the specified code path has automated tests or build verification. It does not mean deployment or production acceptance.
 
 ## 13. Implemented But Unverified
 
 - End-to-end first boot using a real provisioned genesis/network row.
-- MySQL transaction persistence, block persistence/reorganization, and projection rebuild on a current isolated database.
+- Persistence after a live Tomcat restart remains unverified; isolated DB tests covered transaction persistence, block reorganization/projection rebuild, and bootstrap recovery.
 - Scheduled P2P pending-transaction/block sync and shipment relay between real Tomcat nodes.
 - Browser workflows against a running app, including browser-side signing and transaction confirmation.
 - Real mTLS trust and certificate registration/revocation behavior at the container/network layer.
@@ -169,31 +170,30 @@ The following have meaningful automated verification in the current run: canonic
 ## 14. Partial / Incomplete Features
 
 - Multi-node acceptance has a read-only convergence/pending probe and a detailed scenario matrix, but fork, shipment duplicate retry, network partition/reconnect, and restart procedures remain manual and unexecuted.
-- UI implementation exists, but browser/API E2E automation and accessibility/responsive verification are absent.
-- Bootstrap recovery has staged interruption and unsafe-state integration scenarios, but these require a dedicated marked test DB and were not executed here.
+- UI implementation exists. JavaScript syntax is verified, but browser/API E2E automation, accessibility review, and responsive behavior verification remain absent.
+- Bootstrap recovery interruption/resume and unsafe-state scenarios passed on the dedicated marked test DB. Live Tomcat startup from a bootstrapped database remains unverified.
 - Deployment/provisioning documentation for Tomcat, TLS, initial network configuration, secrets, backups, restore, and upgrades is incomplete.
 
 ## 15. Not Implemented
 
 - A dedicated automated browser end-to-end test harness is not present.
 - AgriTrace-specific Docker/Compose or hosting-platform deployment configuration is not present; the project currently builds a WAR.
-- The existing schema does not persist the whole signed manifest digest/environment label. Bootstrap status verifies effective stored state but cannot distinguish manifests that differ only in non-persisted metadata.
+- The development database was not migrated. Existing installations still need migration 003 and deliberate review of legacy NULL manifest identities before bootstrap status can match them.
 
 These are repository absences, not claims that a production system cannot provide them externally.
 
 ## 16. Blocked Features
 
-- Real three-node acceptance is blocked by missing provisioned Tomcat nodes, three independent MySQL databases, trusted server certificates, P2P client identities, and active peer registrations in the available environment. The read-only preflight found the local Tomcat10 service stopped, no local listener on ports 8080/8443, and no P2P identity settings.
-- Bootstrap DB recovery integration is blocked in this session because `AGRITRACE_BOOTSTRAP_IT_*` configuration and the dedicated DB marker are absent. Do not use the normal application DB instead.
-- The MySQL integration suites passed, but the target database isolation was not independently verified. In particular, the transaction integration test can run against a populated database and relies on temporary unique rows plus cleanup; do not treat its pass as proof that a dedicated disposable DB was used.
+- Real three-node acceptance is blocked by missing provisioned Tomcat nodes, three independent MySQL databases, trusted server certificates, P2P client identities, and active peer registrations in the available environment. The 2026-10-05 read-only preflight found the local Tomcat10 service stopped, no local listener on ports 8080/8443 or the alternate checked app ports, no AGRITRACE/Tomcat environment settings, and no supplied node endpoints or P2P identities. MySQL80 is running, but there is no evidence of three separate node databases.
+- No current blocker remains for BOOT-IT-01 or DB-01; both passed on the dedicated marked `agritrace_test` database and fixture cleanup was verified.
 
 ## 17. Known Risks and Gaps
 
-1. Bootstrap DAO/service persistence remains unverified against MySQL until the separately configured, marked bootstrap integration DB is available.
+1. The bootstrap integration test injects a local peer verifier; production local PKCS#12 certificate validation and startup against a running Tomcat node remain separately unverified.
 2. No runtime evidence confirms servlet-container mTLS setup, real peer authorization, polling/retry convergence, or restart recovery.
 3. No automated browser E2E test confirms the complete UI/API/event-signing flow.
-4. Bootstrap proves effective config/chain/projection/account state. The signed bundle's environment and signature bytes are not stored, so a metadata-only manifest change with identical effective ledger state is indistinguishable without a schema-backed receipt.
-5. Existing installations require careful, one-time migrations; schema.sql is for new DBs and migration 001 must not be rerun against a schema that already has its effects.
+4. Bootstrap manifest identity persistence passed on the isolated test DB. The development database was not migrated; migration 003 leaves legacy identities NULL, so existing rows need deliberate operator handling before bootstrap status can match them.
+5. Existing installations require careful, one-time migrations; schema.sql is for new DBs and migrations must not be rerun against a schema that already has their effects.
 6. There is no checked-in operational configuration for Tomcat/TLS, deployment secrets, backups, restore, or production monitoring. Do not infer a production-ready posture from a successful WAR build.
 
 No additional defect is asserted from these gaps alone; the listed items need verification or operational work.
@@ -202,33 +202,31 @@ No additional defect is asserted from these gaps alone; the listed items need ve
 
 | ID | Task | Priority / category | Status | Why / missing work | Likely files/modules | Dependencies | Verification | Risk |
 |---|---|---|---|---|---|---|---|---|
-| BOOT-03 | Persist signed manifest digest and environment for exact bundle identity | P1 — Implementation / database | NOT IMPLEMENTED | Existing schema stores network/genesis and canonical ledger but not the full signed bundle digest/environment. A metadata-only signed-manifest difference cannot be distinguished from the same effective ledger state. | `database/schema.sql`, new migration, `NetworkConfigDAO`, `BootstrapStateVerifier`, bootstrap docs/tests | Explicit approval of a narrowly scoped additive schema migration; apply only to the dedicated bootstrap test DB for verification | Migration/DAO tests; verify different manifest metadata fails closed; rerun prefix/idempotency suite | Existing installations need a safe migration path; do not alter or recreate user DBs. |
-| BOOT-IT-01 | Run bootstrap recovery integration suite on its dedicated marked DB | P1 — Testing / infrastructure | BLOCKED | Test code is present; this environment has no `AGRITRACE_BOOTSTRAP_IT_*` configuration and no marked isolated DB. | `ConsortiumBootstrapMySqlIntegrationTest`, `BootstrapIntegrationDatabase`, `docs/AI/CONSORTIUM_BOOTSTRAP_USAGE.md` | Dedicated MySQL instance, `agritrace` schema, isolation marker | Set documented opt-in variables and run only `-Dtest=ConsortiumBootstrapMySqlIntegrationTest`; check clean fixture teardown | Misconfiguration must fail before test writes. |
-| DB-01 | Re-run existing persistence integration tests with confirmed disposable target | P1 — Testing / infrastructure | PARTIAL | Earlier runs passed, but target isolation was not independently verified; transaction integration does not require an empty DB. Establish and document a dedicated target before relying on the result. | `BlockMySqlIntegrationTest`, `TransactionMySqlIntegrationTest`, DAOs, `database/schema.sql` | Confirmed disposable DB and local credentials | Verify target identity out of band, rerun, inspect final fixture cleanup | A populated target may receive temporary test records. |
 | MP-01 | Execute three-node mTLS and ledger synchronization acceptance matrix | P2 — Integration / infrastructure | BLOCKED | No real nodes have established convergence, pending sync, fork choice, outage/retry, shipment relay, or restart behavior. | `docs/MULTI_NODE_ACCEPTANCE.md`, `Test-MultiNodeP2P.ps1`, P2P classes | Three separate Tomcat deployments/DBs, trusted server certs, peer identities and registrations | Run read-only probe and record every scenario outcome/log/version | Consensus/security behavior can differ from unit mocks. |
 | UI-01 | Add/run browser-to-API smoke/E2E coverage | P2 — Testing | PARTIAL | UI and unit tests exist, but full login, Web Crypto signing, shipment, status, public trace/QR aren't exercised in a browser against a node. | `src/main/webapp/*`, Servlets, `docs/API.md` | Running provisioned app and browser test setup | Exercise role-appropriate flows, inspect network/console, verify QR URL/scan | Requires secure browser context and usable account/key fixtures. |
 | SEC-01 | Complete production security/configuration review | P3 — Security | PARTIAL | Code-level filters have tests, but container TLS trust, certificate lifecycle, secrets, threat model, and live attack scenarios lack evidence. | `security/`, `network/`, container deployment, docs | Target deployment/container design | Review config; test missing/untrusted/revoked certs, CSRF/auth boundaries, key custody, request limits | Do not weaken authentication or copy live secrets into fixtures. |
 | OPS-01 | Document and validate provisioning, deployment, upgrade, backup, and restore | P4 — Infrastructure / documentation | PARTIAL | WAR builds; no deployment recipe/config pins Tomcat or proves genesis/DB/TLS setup and recovery. | `pom.xml`, `database/`, `docs/`, external deployment config | Chosen hosting/Tomcat/MySQL topology and operator-owned secrets | Follow clean install/upgrade/backup/restore rehearsal on staging | Incorrect genesis/migration/restore can strand or fork a network. |
 | DOC-01 | Maintain contracts and status from verified changes | P5 — Documentation | ONGOING | API, architecture, acceptance, and AI status docs exist and must track future implementation/runtime evidence. | `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/MULTI_NODE_ACCEPTANCE.md`, this file | Each feature/verification result | Review docs against code and test output per change | Historical claims can become stale if not dated and rechecked. |
 
-The core BOOT-02 implementation is complete in code; DB-backed recovery acceptance remains blocked on the dedicated integration instance. The schema-backed manifest digest is a separate next implementation task.
+BOOT-02 and BOOT-03 are implemented; BOOT-IT-01 and DB-01 have now passed against `agritrace_test`. The development `agritrace` database was not used.
 
 ## 19. NEXT RECOMMENDED TASK
 
-**BOOT-03 — Persist the signed manifest digest and environment for exact bundle identity.**
+**MP-01 — Execute the three-node mTLS and ledger-synchronization acceptance matrix.**
 
-BOOT-02 now validates and resumes an exact effective network/ledger prefix. The existing schema does not retain the signed manifest digest or environment, so a manifest that changes only metadata while preserving all persisted network and ledger state cannot be distinguished. The next task is a narrowly scoped additive schema change and migration, after explicit approval. Apply and verify it only against the dedicated bootstrap integration database; do not modify a user's existing database.
+The bootstrap identity/recovery and existing MySQL persistence paths have passed on the dedicated local test database. The next meaningful verification gap is real cross-node behavior: independently provisioned Tomcat nodes, TLS/client identities, network convergence, shipment relay, outage recovery, and restart. This requires three separately configured nodes and must not reuse node databases or private keys.
 
 ## 20. Verification Checklist
 
-- [x] `mvn clean verify` succeeds (Surefire suite reports: 179 tests, 176 passed, 0 failures/errors, 3 MySQL integration tests skipped with DB opt-in flags disabled).
-- [x] Bootstrap signature, genesis, malformed-input, exact-prefix, and certificate fingerprint unit tests pass.
-- [ ] Run both MySQL integration tests against a dedicated isolated DB.
-- [ ] Run bootstrap initialization/retry tests against a dedicated isolated DB.
+- [x] `mvn clean verify` succeeds (181 tests; 178 passed, 0 failures/errors, 3 DB tests skipped because DB opt-ins were disabled for the full run).
+- [x] Bootstrap codec, initial block linkage, signature, recovery, identity mismatch, and unsafe-state DB scenarios pass on `agritrace_test`.
+- [x] Block and transaction persistence integration tests pass on `agritrace_test`.
+- [x] `agritrace_test` cleanup check reports zero application rows and retains the isolation marker.
 - [ ] Verify startup and genesis/network configuration on a provisioned Tomcat node.
 - [ ] Run mTLS probe against three independent nodes.
 - [ ] Record pending transaction and block convergence.
 - [ ] Record shipment duplicate/retry, disconnect/reconnect, fork-choice, and restart scenarios.
+- [x] Check UI JavaScript syntax with Node (`node --check src/main/webapp/js/app.js`).
 - [ ] Run browser smoke/E2E coverage for login, signing, shipment, status, public trace, and QR.
 - [ ] Verify deployment TLS/secrets/provisioning and backup/restore procedures on staging.
 
@@ -241,8 +239,8 @@ After a meaningful feature or verification result, update implementation/test st
 - **UI:** earlier Copilot messages said there was no UI; current `index.html`, `app.js`, and CSS implement the listed workflows. They remain unverified in a live browser/node.
 - **Ledger P2P:** earlier history said general transaction/block synchronization was absent. Current `PeerLedgerServlet`, `PeerLedgerService`, codecs, and `PeerLedgerSynchronizer` implement pull synchronization; real-node convergence is unverified.
 - **MySQL migration 001:** history records an attempted failure because a foreign key was already absent after the current schema had included the migration's result. Current `schema.sql` has `organization_canonical` and lacks those old coupling constraints. Do not rerun migration 001 without inspecting the target DB.
-- **MySQL outcome:** history contains differing environments/results, including a prior integration failure and later user-reported green runs. Current integration tests passed; isolation of their configured target was not independently verified.
-- **Test totals:** history's last shared result was 173 tests passing. Current source/build reports 179 tests, 0 failures, 0 errors, 3 skipped (all three DB integration suites in the final safe run).
+- **MySQL outcome:** earlier history contained differing outcomes and uncertain isolation. In the current run BOOT-IT-01 and DB-01 passed on the confirmed `agritrace_test` target; exact fixture cleanup was verified.
+- **Test totals:** history's last shared result was 173 tests passing. The latest full safe build reports 181 tests, 0 failures, 0 errors, 3 DB suites skipped. Targeted BOOT-IT-01 and DB-01 each passed separately afterward.
 - **Three-node acceptance:** history and current acceptance docs both identify it as unexecuted. This remains the principal runtime validation gap.
 
 ## Historical-input handling

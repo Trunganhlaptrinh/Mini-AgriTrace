@@ -17,7 +17,7 @@ AgriTrace is a consortium traceability application for agricultural batches. Far
 
 - Do not change `database/schema.sql`, add/edit migrations, or run DDL unless the user explicitly asks for that database/schema work.
 - Never drop, truncate, recreate, or overwrite a database. Use only an explicitly provisioned, isolated test database for integration tests; `BlockMySqlIntegrationTest` requires its configured test database to be empty.
-- Existing databases may need migrations 001 and 002, but do not assume they have or have not been applied. Inspect the actual target schema and the migration state before proposing database actions. `schema.sql` describes new-database structure and already includes the changes represented by migration 001; it does not make migration 001 safe to rerun.
+- Existing databases may need migrations 001, 002, and 003, but do not assume they have or have not been applied. Inspect the actual target schema and the migration state before proposing database actions. `schema.sql` describes new-database structure and already includes the changes represented by migrations 001 and 003; it does not make any migration safe to rerun. Migration 003 does not backfill manifest identity for existing `network_config` rows.
 - Database credentials must come from `AGRITRACE_DB_URL`, `AGRITRACE_DB_USERNAME`, and `AGRITRACE_DB_PASSWORD` or their documented JVM properties. Never print, log, commit, or copy secrets into documentation.
 - Treat `organizations`, `organization_keys`, `authorized_peers`, batches, and events as rebuildable canonical projections where documented. Do not make local account activation or local shipment drafts canonical ledger state.
 

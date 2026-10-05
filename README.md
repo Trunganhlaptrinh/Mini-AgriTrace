@@ -68,7 +68,7 @@ mvn clean verify
 
 This compiles the WAR and runs unit/Servlet/service tests. MySQL integration suites are opt-in; see [Database integration testing](#database-integration-testing). A clean build does not provision a database, account, certificate, or running Tomcat node.
 
-The packaged WAR is `target/AgriTrace.war`. Deploy it to a compatible Servlet container only after its schema, network/genesis settings, HTTPS, mutual TLS, secrets, and node identity have been provisioned. No Docker Compose or hosting-platform configuration is included.
+The packaged WAR is `target/AgriTrace.war`. Deploy it to a compatible Servlet container only after its schema, network/genesis settings, HTTPS, mutual TLS, secrets, and node identity have been provisioned. A Docker Compose environment is provided for the local three-node demo in [`scripts/local-3node/compose.yaml`](scripts/local-3node/compose.yaml); no production container image or hosting-platform deployment is included.
 
 ## Database and configuration
 

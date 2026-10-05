@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <title>AgriTrace two-leaf mark</title>
+  <path d="M16 28c.2-4.1.1-7.8 0-11.3" stroke="#176542" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M16 18C9.7 18 5.1 14 4.2 7.1c6.9-.8 11.4 3.2 12.3 9.8L16 18Z" fill="#278e49"/>
+  <path d="M16 18c6.3 0 10.9-4 11.8-10.9-6.9-.8-11.4 3.2-12.3 9.8L16 18Z" fill="#278e49"/>
+</svg>

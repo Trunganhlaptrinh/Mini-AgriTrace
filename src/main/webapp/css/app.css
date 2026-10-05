@@ -62,13 +62,8 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 .brand-mark {
     width: 39px;
     height: 39px;
-    display: grid;
-    place-items: center;
-    color: white;
-    background: var(--green);
-    border-radius: 13px 13px 13px 4px;
-    font-family: Georgia, serif;
-    font-size: 24px;
+    display: block;
+    object-fit: contain;
 }
 
 .topbar-meta { display: flex; align-items: center; gap: 14px; }

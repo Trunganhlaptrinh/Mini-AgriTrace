@@ -21,7 +21,7 @@ public final class GovernanceService {
             NetworkConfiguration networkConfiguration,
             TransactionService transactionService
     ) {
-        this(networkConfiguration, transactionService::submit);
+        this(networkConfiguration, transactionService::submitAndProduce);
     }
 
     GovernanceService(

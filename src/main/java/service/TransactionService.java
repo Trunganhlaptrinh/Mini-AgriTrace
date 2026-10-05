@@ -35,6 +35,25 @@ public final class TransactionService {
         return transactionPool.submit(transaction);
     }
 
+    /**
+     * Admit an authenticated local product transaction and immediately ask the existing
+     * producer to include the valid pending pool in a block. Peer synchronization continues
+     * to use submit() so receipt from a peer never independently starts block production.
+     */
+    public synchronized TransactionDAO.SubmissionResult submitAndProduce(BatchEvent event) {
+        TransactionDAO.SubmissionResult result = submit(event);
+        blockProducer.produceNextBlock();
+        return result;
+    }
+
+    public synchronized TransactionDAO.SubmissionResult submitAndProduce(
+            GovernanceTransaction transaction
+    ) {
+        TransactionDAO.SubmissionResult result = submit(transaction);
+        blockProducer.produceNextBlock();
+        return result;
+    }
+
     public TransactionDAO.SubmissionResult submit(LedgerTransaction transaction) {
         if (transaction instanceof BatchEvent event) {
             return submit(event);
@@ -53,7 +72,7 @@ public final class TransactionService {
         return transactionStatusDAO.findByTransactionId(transactionId);
     }
 
-    public Optional<BlockProcessingResult> produceNextBlock() {
+    public synchronized Optional<BlockProcessingResult> produceNextBlock() {
         return blockProducer.produceNextBlock();
     }
 }

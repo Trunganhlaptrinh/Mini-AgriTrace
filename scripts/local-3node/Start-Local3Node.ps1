@@ -65,13 +65,14 @@ foreach($n in $selected){
   $env:AGRITRACE_DB_URL="jdbc:mysql://127.0.0.1:$($n.DatabasePort)/agritrace?serverTimezone=UTC"
   $env:AGRITRACE_DB_USERNAME='agritrace_app'; $env:AGRITRACE_DB_PASSWORD=$dbPassword
   $env:AGRITRACE_P2P_PEER_ID=$n.PeerId; $env:AGRITRACE_P2P_KEYSTORE_PATH=$n.P2pKeyStorePath; $env:AGRITRACE_P2P_KEYSTORE_PASSWORD=$p2pPlain
+  if($n.PublicBaseUrl){$env:AGRITRACE_PUBLIC_BASE_URL=$n.PublicBaseUrl}else{Remove-Item Env:AGRITRACE_PUBLIC_BASE_URL -ErrorAction SilentlyContinue}
   $env:JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=$($n.JavaPeerTrustStorePath) -Djavax.net.ssl.trustStorePassword=$javaTrustPassword -Djavax.net.ssl.trustStoreType=PKCS12"
   $env:CATALINA_HOME=$config.CatalinaHome; $env:CATALINA_BASE=$base
   try{
     $proc=Start-Process -FilePath "$env:ComSpec" -ArgumentList @('/c','call',('"'+(Join-Path $config.CatalinaHome 'bin\catalina.bat')+'"'),'start') -WorkingDirectory $config.CatalinaHome -WindowStyle Hidden -PassThru
     Write-Host "Requested Tomcat start for node $($n.Id) (launcher PID $($proc.Id))."
   }finally{
-    foreach($name in 'AGRITRACE_DB_PASSWORD','AGRITRACE_P2P_KEYSTORE_PASSWORD','JAVA_TOOL_OPTIONS','AGRITRACE_DB_URL','AGRITRACE_DB_USERNAME','AGRITRACE_P2P_PEER_ID','AGRITRACE_P2P_KEYSTORE_PATH','CATALINA_HOME','CATALINA_BASE'){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
+    foreach($name in 'AGRITRACE_DB_PASSWORD','AGRITRACE_P2P_KEYSTORE_PASSWORD','JAVA_TOOL_OPTIONS','AGRITRACE_DB_URL','AGRITRACE_DB_USERNAME','AGRITRACE_P2P_PEER_ID','AGRITRACE_P2P_KEYSTORE_PATH','AGRITRACE_PUBLIC_BASE_URL','CATALINA_HOME','CATALINA_BASE'){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
     [Environment]::SetEnvironmentVariable('JAVA_HOME',$previousJavaHome,'Process')
     $dbPassword=$null;$p2pPlain=$null;$javaTrustPassword=$null
   }

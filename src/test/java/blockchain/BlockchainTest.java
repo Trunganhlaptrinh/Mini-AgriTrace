@@ -108,13 +108,14 @@ class BlockchainTest {
         BlockProducer producer = new BlockProducer(
                 NETWORK_ID,
                 DIFFICULTY,
-                Clock.fixed(GENESIS_TIME, ZoneOffset.UTC),
+                Clock.fixed(GENESIS_TIME.plusMillis(10).plusNanos(987_654), ZoneOffset.UTC),
                 configuredBlockchain,
                 pendingTransactions);
 
         BlockProcessingResult result = producer.produceNextBlock().orElseThrow();
 
         assertEquals(1, result.validation().block().header().height());
+        assertEquals(GENESIS_TIME.plusMillis(10), result.validation().block().header().timestamp());
         assertEquals(BlockRepository.StoreResult.CANONICAL_TIP_UPDATED, result.persistenceResult());
         assertEquals(model.BatchState.HARVESTED,
                 result.canonicalState().nextBlockContext().batches().get(harvest.batchCode()).state());

@@ -8,7 +8,7 @@ public final class BatchService {
     private final BatchTransactionSubmitter transactionSubmitter;
 
     public BatchService(TransactionService transactionService) {
-        this(transactionService::submit);
+        this(transactionService::submitAndProduce);
     }
 
     public BatchService(BatchTransactionSubmitter transactionSubmitter) {

@@ -13,6 +13,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import blockchain.BlockRepository;
+import blockchain.TransactionCodec;
 import blockchain.BlockValidationContext;
 import blockchain.BlockValidationResult;
 import blockchain.BlockValidator;
@@ -51,6 +52,8 @@ class BatchEventServletTest {
         assertTrue(response.body().contains("\"status\":\"PENDING\""));
         assertEquals("farm-1", submitted.get().signatures().get(0).organizationId());
         assertEquals(Instant.parse("2026-10-04T10:00:00.000Z"), submitted.get().eventTime());
+        assertEquals(TransactionCodec.transactionId("test-network", submitted.get()),
+                submitted.get().transactionId());
     }
 
     @Test

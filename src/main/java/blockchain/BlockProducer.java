@@ -2,6 +2,7 @@ package blockchain;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -60,6 +61,7 @@ public final class BlockProducer {
 
     private Instant nextTimestamp(Block parent, Instant now) {
         Instant minimum = parent.header().timestamp().plusMillis(1);
-        return now.isAfter(minimum) ? now : minimum;
+        Instant millisecondTimestamp = now.truncatedTo(ChronoUnit.MILLIS);
+        return millisecondTimestamp.isAfter(minimum) ? millisecondTimestamp : minimum;
     }
 }

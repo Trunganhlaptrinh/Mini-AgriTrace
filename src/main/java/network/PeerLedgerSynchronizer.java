@@ -239,12 +239,16 @@ public final class PeerLedgerSynchronizer {
                 || base.getUserInfo() != null || base.getQuery() != null || base.getFragment() != null) {
             throw new PeerDeliveryException("Registered peer endpoint is not a valid HTTPS endpoint");
         }
-        String normalizedPath = (base.getPath() == null ? "" : base.getPath()).replaceAll("/+$", "")
-                + path;
+        int queryIndex = path.indexOf('?');
+        String requestPath = queryIndex < 0 ? path : path.substring(0, queryIndex);
+        String query = queryIndex < 0 ? null : path.substring(queryIndex + 1);
+        String normalizedPath = (base.getRawPath() == null ? "" : base.getRawPath())
+                .replaceAll("/+$", "") + requestPath;
+        String target = base.getScheme() + "://" + base.getRawAuthority() + normalizedPath
+                + (query == null ? "" : "?" + query);
         try {
-            return new URI(base.getScheme(), null, base.getHost(), base.getPort(),
-                    normalizedPath, null, null);
-        } catch (java.net.URISyntaxException exception) {
+            return URI.create(target);
+        } catch (IllegalArgumentException exception) {
             throw new PeerDeliveryException("Registered peer endpoint cannot be resolved");
         }
     }

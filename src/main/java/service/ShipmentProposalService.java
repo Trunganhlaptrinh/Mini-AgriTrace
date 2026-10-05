@@ -30,7 +30,8 @@ public final class ShipmentProposalService {
     private final String networkId;
     private final Blockchain blockchain;
     private final ShipmentProposalRepository repository;
-    private final ShipmentTransactionSubmitter transactionSubmitter;
+    private final ShipmentTransactionSubmitter localTransactionSubmitter;
+    private final ShipmentTransactionSubmitter peerTransactionSubmitter;
     private final ShipmentProposalRelayer proposalRelayer;
     private final ShipmentEndorsementRelayer endorsementRelayer;
     private final Clock clock;
@@ -43,8 +44,8 @@ public final class ShipmentProposalService {
             ShipmentProposalRelayer proposalRelayer,
             ShipmentEndorsementRelayer endorsementRelayer
     ) {
-        this(networkId, blockchain, repository, transactionService::submit,
-                proposalRelayer, endorsementRelayer, Clock.systemUTC());
+        this(networkId, blockchain, repository, transactionService::submitAndProduce,
+                transactionService::submit, proposalRelayer, endorsementRelayer, Clock.systemUTC());
     }
 
     ShipmentProposalService(
@@ -56,13 +57,30 @@ public final class ShipmentProposalService {
             ShipmentEndorsementRelayer endorsementRelayer,
             Clock clock
     ) {
+        this(networkId, blockchain, repository, transactionSubmitter, transactionSubmitter,
+                proposalRelayer, endorsementRelayer, clock);
+    }
+
+    ShipmentProposalService(
+            String networkId,
+            Blockchain blockchain,
+            ShipmentProposalRepository repository,
+            ShipmentTransactionSubmitter localTransactionSubmitter,
+            ShipmentTransactionSubmitter peerTransactionSubmitter,
+            ShipmentProposalRelayer proposalRelayer,
+            ShipmentEndorsementRelayer endorsementRelayer,
+            Clock clock
+    ) {
         if (networkId == null || networkId.isBlank()) {
             throw new IllegalArgumentException("networkId must not be blank");
         }
         this.networkId = networkId;
         this.blockchain = Objects.requireNonNull(blockchain, "blockchain");
         this.repository = Objects.requireNonNull(repository, "repository");
-        this.transactionSubmitter = Objects.requireNonNull(transactionSubmitter, "transactionSubmitter");
+        this.localTransactionSubmitter = Objects.requireNonNull(
+                localTransactionSubmitter, "localTransactionSubmitter");
+        this.peerTransactionSubmitter = Objects.requireNonNull(
+                peerTransactionSubmitter, "peerTransactionSubmitter");
         this.proposalRelayer = Objects.requireNonNull(proposalRelayer, "proposalRelayer");
         this.endorsementRelayer = Objects.requireNonNull(endorsementRelayer, "endorsementRelayer");
         this.clock = Objects.requireNonNull(clock, "clock");
@@ -160,7 +178,7 @@ public final class ShipmentProposalService {
             endorsed = repository.endorse(proposalId, carrierSignature);
         }
         BatchEvent signedEvent = withTransactionId(endorsed.event(), endorsed.event().signatures());
-        transactionSubmitter.submit(signedEvent);
+        localTransactionSubmitter.submit(signedEvent);
         ShipmentProposal submitted = new ShipmentProposal(
                 endorsed.proposalId(),
                 signedEvent,
@@ -224,7 +242,7 @@ public final class ShipmentProposalService {
         if (!endorsed.event().signatures().equals(signedEvent.signatures())) {
             throw new IllegalArgumentException("Relayed carrier endorsement differs from stored signature");
         }
-        transactionSubmitter.submit(signedEvent);
+        peerTransactionSubmitter.submit(signedEvent);
         repository.markSubmitted(proposalId, signedEvent.transactionId());
         return new ShipmentProposal(
                 proposalId, signedEvent, proposal.expiresAt(),

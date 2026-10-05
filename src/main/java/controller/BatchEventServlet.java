@@ -2,6 +2,7 @@ package controller;
 
 import blockchain.BlockValidationException;
 import blockchain.TransactionValidationException;
+import blockchain.TransactionCodec;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -52,17 +53,20 @@ public final class BatchEventServlet extends HttpServlet {
     private transient BatchService batchService;
     private transient TraceabilityService traceabilityService;
     private transient ShipmentProposalService shipmentProposalService;
+    private transient String networkId;
 
     public BatchEventServlet() {
     }
 
     BatchEventServlet(BatchService batchService) {
         this.batchService = batchService;
+        this.networkId = "test-network";
     }
 
     BatchEventServlet(BatchService batchService, TraceabilityService traceabilityService) {
         this.batchService = batchService;
         this.traceabilityService = traceabilityService;
+        this.networkId = "test-network";
     }
 
     BatchEventServlet(
@@ -73,6 +77,7 @@ public final class BatchEventServlet extends HttpServlet {
         this.batchService = batchService;
         this.traceabilityService = traceabilityService;
         this.shipmentProposalService = shipmentProposalService;
+        this.networkId = "test-network";
     }
 
     @Override
@@ -87,6 +92,7 @@ public final class BatchEventServlet extends HttpServlet {
         batchService = nodeRuntime.batchService();
         traceabilityService = nodeRuntime.traceabilityService();
         shipmentProposalService = nodeRuntime.shipmentProposalService();
+        networkId = nodeRuntime.peerLedgerService().networkId();
     }
 
     @Override
@@ -242,14 +248,11 @@ public final class BatchEventServlet extends HttpServlet {
         Map<String, Object> data = new LinkedHashMap<>();
         dataElement.getAsJsonObject().entrySet().forEach(entry ->
                 data.put(entry.getKey(), jsonValue(entry.getValue())));
+        BatchEvent unsignedId = new BatchEvent(
+                "pending", eventId, batchCode, eventType, eventTime, data, signatures);
+        String transactionId = TransactionCodec.transactionId(networkId, unsignedId);
         return new BatchEvent(
-                "pending",
-                eventId,
-                batchCode,
-                eventType,
-                eventTime,
-                data,
-                signatures);
+                transactionId, eventId, batchCode, eventType, eventTime, data, signatures);
     }
 
     private boolean isShipmentProposalPath(String pathInfo) {

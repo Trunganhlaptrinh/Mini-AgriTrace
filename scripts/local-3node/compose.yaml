@@ -60,12 +60,18 @@ services:
       retries: 30
     labels: { com.agritrace.local3node: "true", com.agritrace.node: "C" }
 secrets:
-  node_a_app_password: { file: ${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-a-app-password.txt }
-  node_a_root_password: { file: ${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-a-root-password.txt }
-  node_b_app_password: { file: ${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-b-app-password.txt }
-  node_b_root_password: { file: ${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-b-root-password.txt }
-  node_c_app_password: { file: ${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-c-app-password.txt }
-  node_c_root_password: { file: ${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-c-root-password.txt }
+  node_a_app_password:
+    file: "${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-a-app-password.txt"
+  node_a_root_password:
+    file: "${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-a-root-password.txt"
+  node_b_app_password:
+    file: "${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-b-app-password.txt"
+  node_b_root_password:
+    file: "${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-b-root-password.txt"
+  node_c_app_password:
+    file: "${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-c-app-password.txt"
+  node_c_root_password:
+    file: "${AGRITRACE_LOCAL3NODE_SECRET_DIR:?Set secret directory}/node-c-root-password.txt"
 volumes:
   node-a-data: { name: agritrace-local3node-node-a-db }
   node-b-data: { name: agritrace-local3node-node-b-db }

@@ -45,20 +45,19 @@ foreach($n in $selected){
   if(-not (Test-Path $server) -or -not (Test-Path (Join-Path $base 'webapps\AgriTrace.war'))){throw "Tomcat base for node $($n.Id) is not prepared. Run Prepare-TomcatBases.ps1 after provisioning identities."}
   $dbPasswordFile=Join-Path $env:AGRITRACE_LOCAL3NODE_SECRET_DIR ("node-{0}-app-password.txt" -f $n.Id.ToLowerInvariant())
   $dbPassword=[IO.File]::ReadAllText($dbPasswordFile).Trim()
-  $p2pPassword=Read-Host "Enter P2P identity password for node $($n.Id)" -AsSecureString
-  $bstr=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($p2pPassword)
-  try{$p2pPlain=[Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)}finally{[Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)}
+  $p2pPlain=[IO.File]::ReadAllText($n.P2pKeyStorePasswordFile).Trim()
+  $javaTrustPassword=[IO.File]::ReadAllText($n.JavaPeerTrustStorePasswordFile).Trim()
   $env:AGRITRACE_DB_URL="jdbc:mysql://127.0.0.1:$($n.DatabasePort)/agritrace?serverTimezone=UTC"
   $env:AGRITRACE_DB_USERNAME='agritrace_app'; $env:AGRITRACE_DB_PASSWORD=$dbPassword
   $env:AGRITRACE_P2P_PEER_ID=$n.PeerId; $env:AGRITRACE_P2P_KEYSTORE_PATH=$n.P2pKeyStorePath; $env:AGRITRACE_P2P_KEYSTORE_PASSWORD=$p2pPlain
-  $env:JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=$($n.JavaPeerTrustStorePath) -Djavax.net.ssl.trustStorePassword=$($n.JavaPeerTrustStorePassword) -Djavax.net.ssl.trustStoreType=PKCS12"
+  $env:JAVA_TOOL_OPTIONS="-Djavax.net.ssl.trustStore=$($n.JavaPeerTrustStorePath) -Djavax.net.ssl.trustStorePassword=$javaTrustPassword -Djavax.net.ssl.trustStoreType=PKCS12"
   $env:CATALINA_HOME=$config.CatalinaHome; $env:CATALINA_BASE=$base
   try{
     $proc=Start-Process -FilePath "$env:ComSpec" -ArgumentList @('/c','call',('"'+(Join-Path $config.CatalinaHome 'bin\catalina.bat')+'"'),'start') -WorkingDirectory $config.CatalinaHome -WindowStyle Hidden -PassThru
     Write-Host "Requested Tomcat start for node $($n.Id) (launcher PID $($proc.Id))."
   }finally{
     foreach($name in 'AGRITRACE_DB_PASSWORD','AGRITRACE_P2P_KEYSTORE_PASSWORD','JAVA_TOOL_OPTIONS','AGRITRACE_DB_URL','AGRITRACE_DB_USERNAME','AGRITRACE_P2P_PEER_ID','AGRITRACE_P2P_KEYSTORE_PATH','CATALINA_HOME','CATALINA_BASE'){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
-    $dbPassword=$null;$p2pPlain=$null
+    $dbPassword=$null;$p2pPlain=$null;$javaTrustPassword=$null
   }
 }
 Write-Host 'Tomcat start was requested only for selected local nodes; verify status/logs before use.'

@@ -1,8 +1,13 @@
 param()
 $ErrorActionPreference='Stop'
 $stateRoot=Join-Path $env:LOCALAPPDATA 'AgriTrace\local-3node'
-$secretDir=Join-Path $stateRoot 'secrets'
+$secretDir=Join-Path $env:USERPROFILE 'Desktop\agritrace-local3node-secrets'
 New-Item -ItemType Directory -Force -Path $secretDir | Out-Null
+$current=[Security.Principal.WindowsIdentity]::GetCurrent().Name
+$allowed=@($current,'NT AUTHORITY\SYSTEM','BUILTIN\Administrators')
+$dirAcl=Get-Acl -LiteralPath $secretDir; $dirAcl.SetAccessRuleProtection($true,$false)
+foreach($name in $allowed){$rule=[Security.AccessControl.FileSystemAccessRule]::new($name,'FullControl','ContainerInherit,ObjectInherit','None','Allow');$dirAcl.SetAccessRule($rule)}
+Set-Acl -LiteralPath $secretDir -AclObject $dirAcl
 $envFile=Join-Path $stateRoot 'compose.env'
 if(Test-Path $envFile){ throw "External secret configuration already exists; refusing to overwrite: $envFile" }
 function New-RandomPassword { $b=New-Object byte[] 36; [Security.Cryptography.RandomNumberGenerator]::Fill($b); ([Convert]::ToHexString($b)).ToLowerInvariant() }
@@ -20,10 +25,10 @@ foreach($node in 'A','B','C'){
  }
 }
 [IO.File]::WriteAllLines($envFile,$entries,[Text.UTF8Encoding]::new($false))
-$current=[Security.Principal.WindowsIdentity]::GetCurrent().Name
 foreach($file in (Get-ChildItem -LiteralPath $secretDir -File)+ (Get-Item $envFile)){
  $acl=Get-Acl -LiteralPath $file.FullName; $acl.SetAccessRuleProtection($true,$false)
- $rule=[Security.AccessControl.FileSystemAccessRule]::new($current,'FullControl','Allow'); $acl.SetAccessRule($rule); Set-Acl -LiteralPath $file.FullName -AclObject $acl
+ foreach($name in $allowed){$rule=[Security.AccessControl.FileSystemAccessRule]::new($name,'FullControl','Allow');$acl.SetAccessRule($rule)}
+ Set-Acl -LiteralPath $file.FullName -AclObject $acl
 }
 Write-Host "Created six random local DB passwords outside the repository: $secretDir"
 Write-Host "Compose environment file: $envFile. This does not create or start database instances."

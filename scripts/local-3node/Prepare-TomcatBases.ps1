@@ -7,12 +7,11 @@ if(-not (Test-Path $war)){ throw 'Build target\AgriTrace.war before preparing To
 if(-not (Test-Path (Join-Path $config.CatalinaHome 'bin\catalina.bat'))){ throw 'Configured CATALINA_HOME is not a Tomcat installation.' }
 $serverTemplate=Get-Content -Raw (Join-Path $PSScriptRoot 'server.xml.template')
 foreach($n in $config.Nodes){
- foreach($field in 'AppServerKeyStorePath','AppServerKeyStorePasswordFile','P2pServerKeyStorePath','P2pServerKeyStorePasswordFile','P2pClientTrustStorePath'){
+ foreach($field in 'AppServerKeyStorePath','AppServerKeyStorePasswordFile','P2pServerKeyStorePath','P2pServerKeyStorePasswordFile','P2pClientTrustStorePath','P2pClientTrustStorePasswordFile','P2pKeyStorePath','P2pKeyStorePasswordFile','JavaPeerTrustStorePath','JavaPeerTrustStorePasswordFile'){
   if(-not (Test-Path -LiteralPath $n[$field])){ throw "Node $($n.Id) prerequisite file is missing: $field" }
  }
- if($n.P2pClientTrustStorePassword -like 'SET_*' -or $n.JavaPeerTrustStorePassword -like 'SET_*'){
-  throw "Set node $($n.Id) truststore passwords in the external config file before rendering server.xml."
- }
+ $trustPassword=[IO.File]::ReadAllText($n.P2pClientTrustStorePasswordFile).Trim()
+ if([string]::IsNullOrWhiteSpace($trustPassword)){throw 'P2P truststore password file is empty.'}
  $base=[IO.Path]::GetFullPath($n.CatalinaBase)
  if($base.StartsWith($repoRoot,[StringComparison]::OrdinalIgnoreCase)){ throw 'Every CATALINA_BASE must be outside the repository.' }
  foreach($dir in 'conf','logs','temp','webapps','work'){ New-Item -ItemType Directory -Force -Path (Join-Path $base $dir) | Out-Null }
@@ -30,7 +29,7 @@ foreach($n in $config.Nodes){
   '@APP_SERVER_KEYSTORE@'=$n.AppServerKeyStorePath; '@APP_SERVER_PASSWORD_FILE@'=$n.AppServerKeyStorePasswordFile
   '@P2P_SERVER_KEYSTORE@'=$n.P2pServerKeyStorePath; '@P2P_SERVER_PASSWORD_FILE@'=$n.P2pServerKeyStorePasswordFile
   '@P2P_CLIENT_TRUSTSTORE@'=$n.P2pClientTrustStorePath
-  '@P2P_CLIENT_TRUSTSTORE_PASSWORD@'=$n.P2pClientTrustStorePassword
+  '@P2P_CLIENT_TRUSTSTORE_PASSWORD@'=$trustPassword
  }
  foreach($token in $map.Keys){ $escaped=[Security.SecurityElement]::Escape([string]$map[$token]); $template=$template.Replace($token,$escaped) }
  if($template -match '@[A-Z0-9_]+@'){ throw "Node $($n.Id) server.xml has unresolved values." }

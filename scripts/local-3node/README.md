@@ -1,6 +1,6 @@
 # Local three-node demo preparation
 
-This directory prepares Node A (Farmer), Node B (Carrier), and Node C (Retailer). `New-Local3NodeCertificates.ps1` creates local development PKI material outside Git. It does not create databases, bootstrap nodes, or start Tomcat.
+This directory supports the local Node A (Farmer), Node B (Carrier), and Node C (Retailer) demo. Databases, development PKI, manifest, node bootstrap, and Tomcat base preparation have been completed outside Git. Tomcat startup remains blocked by the Codex AppContainer's inability to read external PKCS#12 truststores.
 
 ## Files and generated state
 
@@ -24,7 +24,7 @@ The artifact was built from a copy of `manifest.descriptor.example.json` with th
 
 To reproduce or create another bundle, copy the example descriptor outside the repository; provide P-256 public keys and peer client-certificate fingerprints; run the built generator directly using `java -cp "target/classes;target/AgriTrace/WEB-INF/lib/*" bootstrap.ConsortiumManifestGenerator <requests|assemble|finalize> ...`; sign each exact governance request and the outer manifest with the authorized P-256 identities; then run `bootstrap.ConsortiumBootstrapCli validate <manifest>`. The Maven exec plugin hard-codes the CLI main class, so do not rely on `-Dexec.mainClass` to invoke the generator. See `docs/AI/CONSORTIUM_BOOTSTRAP_USAGE.md` for signature details.
 
-The validated bundle is public network configuration and can be reused unchanged for all three nodes. Per-node `status`/`initialize` is a later, separately approved bootstrap phase after each isolated DB and Tomcat base are ready. No node was bootstrapped in this manifest task.
+The validated bundle is public network configuration and was reused unchanged for all three nodes. Each node is initialized from that manifest; node-local ADMIN credentials are distinct Windows Credential Manager entries and are never included in the manifest.
 ## Prepare node config
 
 After choosing an installed Tomcat 10.1 location (but before starting anything), `Initialize-Local3NodeConfig.ps1 -CatalinaHome <TomcatHome>` writes an external node config. Run `New-Local3NodeCertificates.ps1` to create the local CA, six unique identities, six per-node truststores, password files, and public inventory outside Git. `New-Local3NodeSecrets.ps1` writes six randomly generated MySQL passwords and Compose environment values outside Git; it does not start MySQL. `Prepare-TomcatBases.ps1` requires a built WAR and already existing external certificate/trust files, then prepares independent config/logs/webapps/work directories. It does not start Tomcat.
@@ -34,7 +34,7 @@ The configured P2P server connector requires client certificates. Its truststore
 ## Starting and observing (later approved operation)
 
 - `Start-Local3Node.ps1 -DatabaseOnly -Node A` starts only the isolated Node A MySQL container. `-Node All` selects all. This is an infrastructure mutation; do not run without approval.
-- After database bootstrap and Tomcat preparation, `Start-Local3Node.ps1 -Node A` starts selected DB + Tomcat. P2P keystore and outbound truststore passwords are read from external files. The script refuses busy ports and missing prerequisites; it does not kill processes.
+- After resolving the AppContainer truststore access block, `Start-Local3Node.ps1 -Node A` starts selected DB + Tomcat. P2P keystore and outbound truststore passwords are read from external files. The script refuses busy ports and missing prerequisites; it does not kill processes. Current startup is not verified; do not treat a requested launch as a healthy node.
 - `Get-Local3NodeStatus.ps1 -Node All` shows listener and container state.
 - `Get-Local3NodeLogs.ps1 -Node A -Source tomcat|database` reads selected logs.
 - `Stop-Local3Node.ps1 -Node All` stops selected Tomcats and demo database containers while retaining data.
@@ -54,4 +54,4 @@ Docker Engine (client/server 29.7.2, context `desktop-linux`) is available. Thes
 
 Read-only checks through each host mapping confirmed 14 tables from the current `database/schema.sql`, including all required ledger/governance/user tables. All 14 tables in each instance contain zero rows. The schema was applied on first initialization of each fresh volume; no migrations or demo/bootstrap data were applied. MySQL80 and its existing `agritrace` / `agritrace_test` catalogs on port 3306 were not connected to or targeted. The Docker services use separate volumes; do not use `down -v` or remove those volumes.
 
-Docker Desktop did not mount secret files from `%LOCALAPPDATA%` as regular files. The helper now writes them to `%USERPROFILE%\Desktop\agritrace-local3node-secrets`, outside the repository, with local ACLs. Credentials are not recorded in this document. Certificates/truststores are now provisioned; Tomcat, consortium bootstrap, and multi-node acceptance remain unperformed.
+Docker Desktop did not mount secret files from `%LOCALAPPDATA%` as regular files. The helper writes them to `%USERPROFILE%\Desktop\agritrace-local3node-secrets`, outside the repository, with local ACLs. Credentials are not recorded in this document. All three node bootstraps are verified. Tomcat startup, live mTLS, and multi-node acceptance remain unverified because of the external truststore access block.

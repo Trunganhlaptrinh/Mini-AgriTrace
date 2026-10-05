@@ -6,6 +6,13 @@ param(
 $ErrorActionPreference='Stop'
 $repoRoot=(Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 $config=Import-PowerShellDataFile $ConfigPath
+$tomcatJavaHome=$env:JAVA_HOME
+if([string]::IsNullOrWhiteSpace($tomcatJavaHome)){
+  $runtimeLine=& mvn -version | Where-Object {$_ -match '^Java version:.*runtime:\s*(.+)$'} | Select-Object -First 1
+  if(-not $runtimeLine -or $runtimeLine -notmatch '^Java version:.*runtime:\s*(.+)$'){throw 'Could not determine JAVA_HOME from Maven; set JAVA_HOME before starting Tomcat.'}
+  $tomcatJavaHome=$Matches[1].Trim()
+}
+if(-not (Test-Path (Join-Path $tomcatJavaHome 'bin\java.exe'))){throw 'JAVA_HOME must point to a JDK/JRE containing bin\java.exe.'}
 $selected=if($Node -eq 'All'){$config.Nodes}else{@($config.Nodes|Where-Object Id -eq $Node)}
 if(-not $selected){throw "No configured node matches $Node"}
 $war=Join-Path $repoRoot 'target\AgriTrace.war'
@@ -32,6 +39,12 @@ foreach($nodeConfig in $selected){
   if(-not $DatabaseOnly){$socketPorts+=@($nodeConfig.AppPort,$nodeConfig.P2pPort,$nodeConfig.ShutdownPort)}
   foreach($port in $socketPorts){
     $listener=Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue | Select-Object -First 1
+    if($listener -and $port -eq $nodeConfig.DatabasePort){
+      $container='agritrace-local3node-db-'+$nodeConfig.Id.ToLowerInvariant()
+      $binding=& docker inspect --format '{{.State.Status}}|{{range (index .NetworkSettings.Ports "3306/tcp")}}{{.HostIp}}:{{.HostPort}}{{end}}' $container 2>$null
+      $expectedBinding='running|127.0.0.1:'+$nodeConfig.DatabasePort
+      if($LASTEXITCODE -eq 0 -and ([string]$binding).Trim() -eq $expectedBinding){continue}
+    }
     if($listener){$owner=Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue; throw "Port $port for node $($nodeConfig.Id) is already in use by PID $($listener.OwningProcess) ($($owner.Name)). Nothing was stopped."}
   }
 }
@@ -47,6 +60,8 @@ foreach($n in $selected){
   $dbPassword=[IO.File]::ReadAllText($dbPasswordFile).Trim()
   $p2pPlain=[IO.File]::ReadAllText($n.P2pKeyStorePasswordFile).Trim()
   $javaTrustPassword=[IO.File]::ReadAllText($n.JavaPeerTrustStorePasswordFile).Trim()
+  $previousJavaHome=$env:JAVA_HOME
+  $env:JAVA_HOME=$tomcatJavaHome
   $env:AGRITRACE_DB_URL="jdbc:mysql://127.0.0.1:$($n.DatabasePort)/agritrace?serverTimezone=UTC"
   $env:AGRITRACE_DB_USERNAME='agritrace_app'; $env:AGRITRACE_DB_PASSWORD=$dbPassword
   $env:AGRITRACE_P2P_PEER_ID=$n.PeerId; $env:AGRITRACE_P2P_KEYSTORE_PATH=$n.P2pKeyStorePath; $env:AGRITRACE_P2P_KEYSTORE_PASSWORD=$p2pPlain
@@ -57,6 +72,7 @@ foreach($n in $selected){
     Write-Host "Requested Tomcat start for node $($n.Id) (launcher PID $($proc.Id))."
   }finally{
     foreach($name in 'AGRITRACE_DB_PASSWORD','AGRITRACE_P2P_KEYSTORE_PASSWORD','JAVA_TOOL_OPTIONS','AGRITRACE_DB_URL','AGRITRACE_DB_USERNAME','AGRITRACE_P2P_PEER_ID','AGRITRACE_P2P_KEYSTORE_PATH','CATALINA_HOME','CATALINA_BASE'){[Environment]::SetEnvironmentVariable($name,$null,'Process')}
+    [Environment]::SetEnvironmentVariable('JAVA_HOME',$previousJavaHome,'Process')
     $dbPassword=$null;$p2pPlain=$null;$javaTrustPassword=$null
   }
 }

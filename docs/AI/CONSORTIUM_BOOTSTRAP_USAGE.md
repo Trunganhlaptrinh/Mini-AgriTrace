@@ -11,12 +11,17 @@ mvn exec:java -Dexec.args="validate path/to/manifest.json"
 mvn exec:java -Dexec.args="status path/to/manifest.json [local-admin-username]"
 mvn exec:java -Dexec.args="signing-bytes path/to/unsigned-manifest.json path/to/signing-input.bin"
 mvn exec:java -Dexec.args="initialize path/to/signed-manifest.json local-admin-name"
+mvn exec:java -Dexec.args="initialize path/to/signed-manifest.json admin-a --credential-target AgriTrace/Local3Node/admin-a"
 ```
 
 For `status`, omit the optional username to accept the one local ADMIN already stored; provide it to require
 an exact username match. It prints a JSON result with `state`, present/expected block and transaction counts,
 local ADMIN username, `localPeerVerified`, and a non-secret detail. States are `UNINITIALIZED`, `RESUMABLE`,
 `INITIALIZED`, `INCONSISTENT`, `DIFFERENT_NETWORK`, and `UNEXPECTED_DATA`. The command is read-only.
+
+The optional `--credential-target` mode is for the local A/B/C demo accounts only. It accepts a Credential Manager target name, never a password. Supported mappings are `admin-a` → `AgriTrace/Local3Node/admin-a`, `admin-b` → `AgriTrace/Local3Node/admin-b`, and `admin-c` → `AgriTrace/Local3Node/admin-c`. On Windows, the CLI reads a Generic Credential Manager entry into a temporary `char[]`; it validates the target, account, and generated-secret format, then clears native and Java buffers. Keep the existing interactive console path for manual accounts. The CLI does not create or rotate credential entries.
+
+For provisioning A/B/C, use `scripts/local-3node/Initialize-Local3NodeBootstrap.ps1`. It preflights all selected nodes before writes, creates 256-bit independent CSPRNG secrets directly in Credential Manager only when a target is absent, invokes the CLI without putting those secrets in arguments/environment/stdout/files, and resumes without rotating an existing entry. If a later node fails, earlier initialized nodes and credentials are retained; there is no destructive rollback. `-PreflightOnly` performs no credential or database write.
 
 The manifest signature is P-256 ECDSA/SHA-256 in standard Base64, encoded as the 64-byte IEEE P1363 form.
 It covers canonical JSON for all manifest properties except `signature`, including governance envelopes,

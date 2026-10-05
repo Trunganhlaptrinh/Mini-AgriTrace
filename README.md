@@ -104,7 +104,16 @@ mvn exec:java "-Dexec.args=signing-bytes path/to/unsigned-manifest.json path/to/
 mvn exec:java "-Dexec.args=initialize path/to/signed-manifest.json local-admin-name"
 ```
 
-The `status`/`initialize` commands use the configured node database and local P2P identity. New local ADMIN passwords are read through an interactive no-echo console and hashed before storage. `initialize` requires the database catalog `agritrace` to contain the checked-in schema and no existing application state, or to match an exact verified bootstrap prefix. It does not repair, clear, or overwrite divergent data. Read [the bootstrap operator guide](docs/AI/CONSORTIUM_BOOTSTRAP_USAGE.md) for manifest fields, signature handling, status output, and recovery details.
+The `status`/`initialize` commands use the configured node database and local P2P identity. Manual initialization keeps the interactive no-echo prompt. For the local A/B/C demo, `scripts/local-3node/Initialize-Local3NodeBootstrap.ps1` generates a unique random ADMIN secret per node and stores each in the current Windows user's Credential Manager. The secret is never passed to Java through CLI arguments or environment variables; only its non-secret Credential Manager target is passed. The CLI reads the target into memory and persists only the existing PBKDF2 password hash. Do not export, print, or copy Credential Manager values.
+
+Run the local bootstrap script from this repository after reviewing its node config and signed manifest:
+
+```powershell
+.\scripts\local-3node\Initialize-Local3NodeBootstrap.ps1 -Node All -PreflightOnly
+.\scripts\local-3node\Initialize-Local3NodeBootstrap.ps1 -Node All
+```
+
+The first command is read-only. The second only targets the three isolated node databases at ports 3307–3309 and can resume an exact bootstrap state. It never targets `3306/agritrace` or `3306/agritrace_test`. `initialize` requires the node catalog to contain the checked-in schema and no existing application state, or to match an exact verified bootstrap prefix. It does not repair, clear, migrate, or overwrite divergent data. Read [the bootstrap operator guide](docs/AI/CONSORTIUM_BOOTSTRAP_USAGE.md) for manifest fields, signature handling, status output, and recovery details.
 
 ## Testing
 

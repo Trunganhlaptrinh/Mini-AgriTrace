@@ -1,6 +1,6 @@
 # Multi-Node Provisioning Plan
 
-**Scope:** local three-node MP-01 preparation. MySQL database-only provisioning for Nodes A/B/C completed and was verified on 2026-10-05. Local demo certificates/truststores were provisioned on 2026-10-05. Consortium bootstrap and Tomcat instances have not been run or started.
+**Scope:** local three-node MP-01. MySQL database-only provisioning, local demo certificates/truststores, shared signed manifest, and per-node consortium bootstrap for Nodes A/B/C were completed and verified on 2026-10-05. Tomcat bases were prepared, but application startup is blocked because the Codex AppContainer cannot read external PKCS#12 truststores.
 
 ## 1. Target topology
 
@@ -17,7 +17,7 @@ Ports are defaults. The start script checks selected database, app, P2P and Tomc
 Offline consortium bootstrap **does exist**:
 
 - `bootstrap.ConsortiumBootstrapCli` offers `validate`, `status`, `signing-bytes`, and `initialize`.
-- `bootstrap.ConsortiumBootstrapService` verifies a signed manifest, initializes/resumes an exact expected ledger, and creates a node-local ADMIN only through an interactive console. It refuses unexpected/conflicting database state; it does not clear data or apply schema migrations.
+- `bootstrap.ConsortiumBootstrapService` verifies a signed manifest, initializes/resumes an exact expected ledger, and creates a node-local ADMIN. It refuses unexpected/conflicting database state; it does not clear data or apply schema migrations. The CLI retains its hidden interactive prompt; the approved local workflow supplies a Windows Credential Manager target instead of a password argument.
 - `bootstrap.BootstrapManifestCodec` defines and verifies the manifest format and canonical signature bytes. `BootstrapStateVerifier` verifies persisted state. The schema requires the manifest identity migration for an existing schema that lacks its identity columns.
 - The existing bootstrap CLI does not have a `generate` command. `bootstrap.ConsortiumManifestGenerator` fills that gap for the local A/B/C topology.
 - `bootstrap.ConsortiumManifestGenerator` now fills that gap for the specific local A/B/C topology. It emits signed governance requests, assembles and verifies the deterministic initial blocks from externally returned signatures, and finalizes/verifies the signed bundle. It loads no private keys and does not change the existing CLI.
@@ -37,7 +37,7 @@ The generator accepts only a development descriptor with exactly one `FARMER`, `
 3. Run generator `assemble <descriptor.json> <governance-signatures.json> <unsigned-manifest.json>`. It verifies the governance signatures and deterministic ledger before emitting an unsigned bundle.
 4. Run `bootstrap.ConsortiumBootstrapCli signing-bytes <unsigned-manifest.json> <manifest-signing-bytes.bin>`. Have the authorized external admin signer sign those bytes and save the Base64 P1363 output outside the repo. Run generator `finalize <unsigned-manifest.json> <signature.txt> <signed-manifest.json>`; this verifies the signature and complete manifest.
 5. Run `bootstrap.ConsortiumBootstrapCli validate <signed-manifest.json>` as a DB-free manifest validation. Retain the signed manifest as public network configuration and distribute the **same unchanged file** to all three isolated nodes.
-6. After separately approved infrastructure provisioning and applying the schema to each fresh node database, set that node's DB/P2P environment and run `status <manifest> <local-admin-name>` then `initialize <manifest> <local-admin-name>` against that node only. `initialize` requires the configured local peer ID and PKCS#12 identity to match that peer's manifest registration, asks for the new local ADMIN password via an echo-disabled interactive console, and verifies the resulting DB. Repeat separately for A/B/C. Never point these commands at `agritrace` development or `agritrace_test` integration databases.
+6. `scripts/local-3node/Initialize-Local3NodeBootstrap.ps1` generated unique ADMIN passwords directly into Windows Credential Manager and invoked the existing CLI through exact node-specific targets. No password was supplied as a process argument or written in the repository. Read-only CLI status and database checks confirmed all three initialized states. Never point these commands at `agritrace` development or `agritrace_test` integration databases.
 
 Use the existing Maven exec plugin only for `ConsortiumBootstrapCli` commands. Invoke the generator directly with Java and the built classpath as shown in `scripts/local-3node/README.md`. For this approved local demo, a separate external helper holds four P-256 PKCS#12 keys and signs the six governance requests plus the outer manifest; it is not part of the repository. Keep all key/password material and manifest artifacts outside Git.
 
@@ -51,14 +51,14 @@ Use the existing Maven exec plugin only for `ConsortiumBootstrapCli` commands. I
 
 ## 4. Prepared files and operator scripts
 
-The scripts/config under `scripts/local-3node/` are prepared templates. The Compose DB services were invoked for Nodes A/B/C; only those three MySQL containers and their dedicated volumes are running. The secret helper generated credentials outside the repository. Tomcat/config preparation scripts were not executed.
+The scripts/config under `scripts/local-3node/` are prepared templates. The three isolated MySQL services, local PKI, signed manifest, node bootstraps, and Catalina bases are ready. Tomcat app/P2P services are not running: startup fails when the Tomcat process tries to open the external peer truststore under the Codex AppContainer boundary.
 
 - `compose.yaml`: three independent MySQL 8.4 containers, each with its own named volume and host port. Each initializes the unchanged schema into its own `agritrace` catalog. Docker secrets are supplied from external password files.
 - `nodes.example.psd1`: A/B/C role, port, peer/org ID and external path template.
 - `Initialize-Local3NodeConfig.ps1`: writes an external user config under `%LOCALAPPDATA%\AgriTrace\local-3node`; does not generate keys/certificates.
 - `New-Local3NodeSecrets.ps1`: writes independent random MySQL app/root password files and Compose env outside Git; does not start/create DB instances.
 - `server.xml.template` and `Prepare-TomcatBases.ps1`: define and render isolated Catalina bases/config/logs/webapps after certificates exist and WAR is built; preparation does not start Tomcat.
-- `Start-Local3Node.ps1`: checks listeners and prerequisites; `-DatabaseOnly` starts only selected MySQL demo containers. Without that switch it starts those DB containers and selected prepared Tomcat instances. Do not run before explicit infrastructure approval.
+- `Start-Local3Node.ps1`: checks listeners and prerequisites; `-DatabaseOnly` starts only selected MySQL demo containers. Without that switch it starts those DB containers and selected prepared Tomcat instances. Current sandbox access to external TLS stores is blocked; no ACL workaround is approved.
 - `Stop-Local3Node.ps1`: stops selected Tomcat and DB services; preserves DB volumes.
 - `Get-Local3NodeStatus.ps1`, `Get-Local3NodeLogs.ps1`: inspect selected listener/container/Tomcat status and logs.
 - `Cleanup-Local3Node.ps1`: stops selected services only. It deliberately does not delete volumes, identities, logs, or Catalina bases.
@@ -93,13 +93,12 @@ Runtime variables are node-specific: `AGRITRACE_DB_URL`, `AGRITRACE_DB_USERNAME`
 
 This is the prepared flow, not an assertion that infra has been provisioned:
 
-1. External node configuration and isolated databases are already prepared; retain their separate volumes and recheck ports before starting any application process.
-2. Local demo CA/certificates and peer fingerprints are already provisioned outside Git. The shared signed manifest is generated and validated; do not regenerate it unless the registered identity/endpoints change.
-3. Review the external signed manifest and confirm the exact same file is selected for all three nodes.
-4. Build the WAR, confirm Tomcat 10.1 installation, and prepare A/B/C Catalina bases from the external certificates/config. This does not start Tomcat.
-5. With separate approval, run `validate`, `status`, and `initialize` for each node against only its isolated DB, using the same signed manifest and the matching node peer identity. Bootstrap is the supported pre-start ledger path; no manual ledger SQL is needed.
-6. After explicit approval, start Tomcat nodes. Check status/logs and verify each node reports identical network/genesis and expected active peer records.
-7. Only after all three nodes are safely provisioned and individually smoke-checked, run the separately planned multi-node acceptance matrix. This task has **not** run that matrix.
+1. External node configuration, isolated databases, local CA/certificates, and shared signed manifest are prepared outside Git.
+2. The same signed manifest was validated and bootstrapped on A/B/C. Each node is `INITIALIZED` with the expected initial blocks/governance state, local peer identity, and a local ADMIN password hash.
+3. Tomcat 10.1.60, the WAR, Connector/J common-loader JAR, and separate A/B/C Catalina bases are prepared.
+4. Resolve external truststore access from a normal user PowerShell outside the Codex AppContainer, or obtain explicit approval for the exact package-SID read ACL and exact TLS files. Automatic review rejected the proposed ACL grant as an unapproved expansion of access to private-key/password files. Do not retry broader grants.
+5. Start the three Tomcat nodes only after resolving that boundary; verify app and P2P/mTLS listeners, application startup, peer identity, and logs.
+6. Only after each node is individually smoke-checked, run the separately planned multi-node acceptance matrix. It has **not** run.
 
 Do not use `agritrace` or `agritrace_test` in any of these steps. Do not apply migrations to demo containers unless the database state and migration need are separately reviewed; fresh containers use `database/schema.sql`.
 

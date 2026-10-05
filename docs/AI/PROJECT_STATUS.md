@@ -2,7 +2,7 @@
 
 **Status date:** 2026-10-05
 
-**Authority:** Current repository files, this session's clean Maven verification, and the local infrastructure preflight below. Historical Copilot statements are included only as development context and are not treated as current runtime evidence.
+**Authority:** Current repository files, this session's clean Maven verification, verified local bootstrap status, and observed Tomcat startup diagnostics. Historical Copilot statements are included only as development context and are not treated as current runtime evidence.
 
 ## 1. Project Overview
 
@@ -135,12 +135,13 @@ These flows are traced from current route annotations, services, and DAOs. They 
 
 ## 10. Test Status
 
-**Latest full safe build (2026-10-05):** `mvn clean verify` completed successfully and packaged `target/AgriTrace.war`. Per-suite Surefire reports total **181 tests, 0 failures, 0 errors, 3 skipped**. In this full-suite invocation all database opt-in flags were disabled, so no database was contacted.
+**Latest full safe build (2026-10-05):** `mvn clean verify` completed successfully and packaged `target/AgriTrace.war`. Per-suite Surefire reports total **188 tests, 0 failures, 0 errors, 3 skipped**. In this full-suite invocation all database opt-in flags were disabled, so no database was contacted.
 
-- **Automated unit/Servlet/service tests:** 178 passed, including initial-block-from-genesis validation, manifest identity, signature, genesis, malformed manifest, exact-prefix, and certificate-fingerprint unit tests.
+- **Automated unit/Servlet/service tests:** 185 passed, including the Credential Manager account/target/clear-buffer flow and MySQL driver classloader test, plus initial-block-from-genesis validation, manifest identity, signatures, exact-prefix, and certificate-fingerprint tests.
 - **Manifest generator tests:** 3 passed, 0 failures/errors/skips; final local manifest passed the DB-free ConsortiumBootstrapCli validate command on 2026-10-05.
 - **Automated MySQL integration:** BOOT-IT-01 passed (1 test); DB-01 passed (`BlockMySqlIntegrationTest`: 1; `TransactionMySqlIntegrationTest`: 1). All used only `agritrace_test`; both DB-01 tests passed in sequence. Exact post-run cleanup verification found zero application-table rows, and the marker remained. The full safe build skipped the three DB suites by design.
-- **Automated multi-node tests:** no live-node acceptance run. On 2026-10-05, preflight confirmed Tomcat10 is stopped, no listener was found on the expected local app/P2P ports, and no AGRITRACE/Tomcat environment settings were present. MySQL80 service is running, but that alone does not provide three isolated node databases. The read-only probe script parses without PowerShell syntax errors; it was not run because no node applications were started. Peer PFX identities are now provisioned externally, but there are no active bootstrapped peer registrations yet. Full disruption scenarios remain manual/infrastructure-dependent.
+- **Local bootstrap (2026-10-05):** Nodes A/B/C were initialized from the same validated manifest against only MySQL ports 3307/3308/3309. Read-only CLI verification reports `INITIALIZED`, 3/3 blocks, 6/6 governance transactions, ADMIN present with a supported PBKDF2 hash, and `localPeerVerified=true` for each node. Three independent Windows Credential Manager targets exist; their contents were never displayed. The three named DB volumes remained attached and healthy after a Compose container recreation. Development/test databases were not targeted.
+- **Tomcat/mTLS:** Apache Tomcat 10.1.60 was downloaded outside Git and its SHA-512 was matched against Apache's published checksum. Three external Catalina bases and WAR artifacts were prepared. Tomcat process startup was attempted, but the Codex AppContainer cannot read the external P12 truststore path even after file ACLs were restricted to the current user/SYSTEM/Administrators. A request to grant the specific Codex package SID read access to local P12/password files was rejected by automatic review because it would persistently expose private keys/password files to that package. No workaround was attempted. App/P2P listener ports did not open; mTLS and real-node acceptance remain blocked.
 - **Browser/manual acceptance:** `node --check src/main/webapp/js/app.js` passed on 2026-10-05. No browser-to-API workflow was executed: Tomcat is stopped and no browser automation/browser binary is configured in this environment. Servlet unit tests run as part of the Maven suite, but they do not verify the browser UI.
 - **WAR build:** passed under Maven; the build target is Java 17, though this session's runtime was Java 25.
 
@@ -148,31 +149,32 @@ Earlier sessions reported different build totals and MySQL outcomes. Current tar
 
 ## 11. Deployment State
 
-- A Maven WAR is produced. A Tomcat deployment guide or pinned container configuration is not present.
+- A Maven WAR is produced. For this local demo, Apache Tomcat 10.1.60 was prepared outside Git; this is not a production-pinned deployment configuration.
 - Local execution requires an initialized MySQL schema plus a populated, consistent `network_config` genesis record and secure DB settings. New schema creation alone does not create valid consensus values.
 - Every consortium node requires its own DB, server TLS identity, P2P client PKCS#12 identity, trust configuration, and active canonical peer registration. All nodes must share network/genesis settings.
+- Local bootstrap succeeded for all three isolated nodes. The current Codex AppContainer boundary prevents its Tomcat child processes from reading the external P12 truststore files; app/P2P listeners and live mTLS remain unverified.
 - Docker, Render, or another production hosting deployment is not implemented/verified for AgriTrace.
 
 ## 12. Completed Features
 
-The following have meaningful automated verification in the current run: canonical transaction/block encoding and validation; business/governance validation; fork-choice logic; password hashing, login/security filters, peer authorization logic; Servlet/service tests for admin, batch, shipment, status, trace, and QR; wire codec and peer service tests; BOOT-IT-01 recovery/identity cases; DB-01 block reorganization/projection and transaction persistence; WAR compilation/package.
+The following have meaningful automated verification in the current run: canonical transaction/block encoding and validation; business/governance validation; fork-choice logic; password hashing, login/security filters, peer authorization logic; Servlet/service tests for admin, batch, shipment, status, trace, and QR; wire codec and peer service tests; BOOT-IT-01 recovery/identity cases; DB-01 block reorganization/projection and transaction persistence; Credential Manager mapping/buffer-clearing and JDBC driver load unit tests; WAR compilation/package. In addition, local three-node bootstrap was directly verified by the read-only bootstrap CLI against A/B/C.
 
 “Completed” here means the specified code path has automated tests or build verification. It does not mean deployment or production acceptance.
 
 ## 13. Implemented But Unverified
 
-- End-to-end first boot using a real provisioned genesis/network row.
+- End-to-end first boot through the browser/API after a running Tomcat node is available.
 - Persistence after a live Tomcat restart remains unverified; isolated DB tests covered transaction persistence, block reorganization/projection rebuild, and bootstrap recovery.
 - Scheduled P2P pending-transaction/block sync and shipment relay between real Tomcat nodes.
 - Browser workflows against a running app, including browser-side signing and transaction confirmation.
-- Real mTLS trust and certificate registration/revocation behavior at the container/network layer.
+- Real mTLS trust and certificate registration/revocation behavior at the container/network layer; Tomcat could not read the external truststore within the Codex AppContainer.
 - Actual public URL and QR scan behavior after deployment.
 
 ## 14. Partial / Incomplete Features
 
 - Multi-node acceptance has a read-only convergence/pending probe and a detailed scenario matrix, but fork, shipment duplicate retry, network partition/reconnect, and restart procedures remain manual and unexecuted.
 - UI implementation exists. JavaScript syntax is verified, but browser/API E2E automation, accessibility review, and responsive behavior verification remain absent.
-- Bootstrap recovery interruption/resume and unsafe-state scenarios passed on the dedicated marked test DB. Live Tomcat startup from a bootstrapped database remains unverified.
+- Bootstrap recovery interruption/resume and unsafe-state scenarios passed on the dedicated marked test DB. Each real local node is bootstrapped; Tomcat startup from those databases remains unverified.
 - Deployment/provisioning documentation for Tomcat, TLS, initial network configuration, secrets, backups, restore, and upgrades is incomplete.
 
 ## 15. Not Implemented
@@ -185,7 +187,7 @@ These are repository absences, not claims that a production system cannot provid
 
 ## 16. Blocked Features
 
-- Real three-node acceptance remains blocked pending Tomcat CATALINA_BASE preparation/start and per-node bootstrap/active peer registrations. A common local signed consortium manifest was generated and passed DB-free CLI validation on 2026-10-05. Three isolated MySQL 8.4.11 node databases were provisioned on 2026-10-05 at host ports 3307/3308/3309 with separate volumes. MP-01-CERT generated a local-only CA, six unique RSA leaf identities, per-node truststores and a public certificate inventory outside Git. The app/P2P ports have not been started, and live TLS/mTLS, peer synchronization, and shipment flows remain unverified. The existing MySQL80 catalogs on port 3306 were not targeted by the node provisioning.
+- Real three-node acceptance is blocked at Tomcat runtime startup by the Codex AppContainer's inability to read external P12 truststore files. Apache Tomcat 10.1.60, WAR, three CATALINA_BASE directories, and the MySQL Connector/J common-loader JAR are prepared outside Git. The app/P2P listener ports did not open. Automatic review rejected granting the package SID read access to private P12/password material; do not attempt broader ACLs. Continue only after the user approves that exact access or runs the local Tomcat start outside the Codex package sandbox. The local signed manifest and three isolated MySQL node DBs are in place; all bootstrap status checks pass. Ports 3306/agritrace and 3306/agritrace_test were not targeted.
 - No current blocker remains for BOOT-IT-01 or DB-01; both passed on the dedicated marked `agritrace_test` database and fixture cleanup was verified.
 
 ## 17. Known Risks and Gaps
@@ -203,28 +205,29 @@ No additional defect is asserted from these gaps alone; the listed items need ve
 
 | ID | Task | Priority / category | Status | Why / missing work | Likely files/modules | Dependencies | Verification | Risk |
 |---|---|---|---|---|---|---|---|---|
-| MP-01-BOOTSTRAP | Bootstrap the three isolated nodes from the shared signed manifest | P1 — Core functionality / infrastructure | READY AFTER APPROVAL | The common manifest is validated; each node still needs a prepared Tomcat base and its own matching peer identity/config, then offline bootstrap against its own isolated database. | `ConsortiumBootstrapCli`, `ConsortiumBootstrapService`, `scripts/local-3node/` | Tomcat 10.1 installation, per-node base/config, isolated node DBs and local identities | Run `validate`, `status`, and `initialize` separately for A/B/C; verify each resulting local ledger and ADMIN | Wrong node identity/database selection must fail safely; do not target the development or test DB. |
-| MP-01-ACCEPT | Execute three-node mTLS and ledger synchronization acceptance matrix | P2 — Integration / infrastructure | BLOCKED | No real nodes have established convergence, pending sync, fork choice, outage/retry, shipment relay, or restart behavior. | `docs/MULTI_NODE_ACCEPTANCE.md`, `Test-MultiNodeP2P.ps1`, P2P classes | Three bootstrapped Tomcat deployments and active peer registrations | Run read-only probe and record every scenario outcome/log/version | Consensus/security behavior can differ from unit mocks. |
+| MP-01-TOMCAT | Start and verify three Tomcat HTTPS/P2P nodes | P1 — Infrastructure / integration | BLOCKED | Bootstrap, WAR, isolated DBs, per-node identities, and CATALINA_BASEs are ready. AppContainer startup fails to read the peer truststore from the external state path. | `scripts/local-3node/Start-Local3Node.ps1`, external CATALINA_BASE and identity/trust files | User-approved package SID read access to exact TLS files, or start from an unsandboxed user PowerShell | Verify 8443–8445, 9443–9445, server cert trust, mTLS, and each node's network identity | Do not grant broad application access to P12/password files; do not weaken TLS. |
+| MP-01-ACCEPT | Execute three-node mTLS and ledger synchronization acceptance matrix | P2 — Integration / infrastructure | BLOCKED | No app/P2P listeners are active; convergence, pending sync, fork choice, outage/retry, shipment relay, and restart behavior have not been run. | `docs/MULTI_NODE_ACCEPTANCE.md`, `scripts/acceptance/Test-MultiNodeP2P.ps1`, P2P classes | MP-01-TOMCAT verified | Run read-only probe and record every scenario outcome/log/version | Consensus/security behavior can differ from unit mocks. |
 | UI-01 | Add/run browser-to-API smoke/E2E coverage | P2 — Testing | PARTIAL | UI and unit tests exist, but full login, Web Crypto signing, shipment, status, public trace/QR aren't exercised in a browser against a node. | `src/main/webapp/*`, Servlets, `docs/API.md` | Running provisioned app and browser test setup | Exercise role-appropriate flows, inspect network/console, verify QR URL/scan | Requires secure browser context and usable account/key fixtures. |
 | SEC-01 | Complete production security/configuration review | P3 — Security | PARTIAL | Code-level filters have tests, but container TLS trust, certificate lifecycle, secrets, threat model, and live attack scenarios lack evidence. | `security/`, `network/`, container deployment, docs | Target deployment/container design | Review config; test missing/untrusted/revoked certs, CSRF/auth boundaries, key custody, request limits | Do not weaken authentication or copy live secrets into fixtures. |
 | OPS-01 | Document and validate provisioning, deployment, upgrade, backup, and restore | P4 — Infrastructure / documentation | PARTIAL | WAR builds; no deployment recipe/config pins Tomcat or proves genesis/DB/TLS setup and recovery. | `pom.xml`, `database/`, `docs/`, external deployment config | Chosen hosting/Tomcat/MySQL topology and operator-owned secrets | Follow clean install/upgrade/backup/restore rehearsal on staging | Incorrect genesis/migration/restore can strand or fork a network. |
 | DOC-01 | Maintain contracts and status from verified changes | P5 — Documentation | ONGOING | API, architecture, acceptance, and AI status docs exist and must track future implementation/runtime evidence. | `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/MULTI_NODE_ACCEPTANCE.md`, this file | Each feature/verification result | Review docs against code and test output per change | Historical claims can become stale if not dated and rechecked. |
 
-BOOT-02 and BOOT-03 are implemented; BOOT-IT-01 and DB-01 have now passed against `agritrace_test`. The development `agritrace` database was not used.
+BOOT-02 and BOOT-03 are implemented; BOOT-IT-01 and DB-01 passed against `agritrace_test`; local bootstrap A/B/C is verified. The development `agritrace` database was not used.
 
 ## 19. NEXT RECOMMENDED TASK
 
-**MP-01-BOOTSTRAP — Bootstrap Nodes A, B, and C from the same validated signed manifest.**
+**MP-01-TOMCAT — Resolve the AppContainer file-access boundary, then verify HTTPS/mTLS for Nodes A/B/C.**
 
-The local consortium manifest is signed and validated, and the three isolated node databases plus local TLS identities are provisioned. The next dependency is preparing each Tomcat base and running the offline bootstrap separately against its own isolated node database using the same unchanged manifest and its matching peer identity. This establishes peer registrations before live mTLS and convergence acceptance. Never use `agritrace` or `agritrace_test` for node bootstrap.
+All three nodes are already `INITIALIZED` from the same manifest, with their separate ADMIN credential targets stored in Windows Credential Manager. Tomcat 10.1.60 and each CATALINA_BASE are prepared, but the Tomcat process cannot read external truststore files under the Codex AppContainer. Automatic review rejected adding the Codex package SID to the ACLs for private-key/password files. Obtain approval for that exact read scope or start Tomcat from an unsandboxed user shell; then verify HTTPS and mTLS before running the acceptance matrix. Never use `agritrace` or `agritrace_test` for node runtime.
 
 ## 20. Verification Checklist
 
-- [x] `mvn clean verify` succeeds (181 tests; 178 passed, 0 failures/errors, 3 DB tests skipped because DB opt-ins were disabled for the full run).
+- [x] `mvn clean verify` succeeds (188 tests; 185 passed, 0 failures/errors, 3 DB tests skipped because DB opt-ins were disabled for the full run).
 - [x] Bootstrap codec, initial block linkage, signature, recovery, identity mismatch, and unsafe-state DB scenarios pass on `agritrace_test`.
 - [x] Block and transaction persistence integration tests pass on `agritrace_test`.
 - [x] `agritrace_test` cleanup check reports zero application rows and retains the isolation marker.
-- [ ] Verify startup and genesis/network configuration on a provisioned Tomcat node.
+- [x] Bootstrap status on A/B/C is `INITIALIZED`, with all expected blocks/governance records, ADMIN hash, and local peer identity verified.
+- [ ] Verify app/P2P startup on three Tomcat nodes (blocked by Codex AppContainer access to TLS files).
 - [ ] Run mTLS probe against three independent nodes.
 - [ ] Record pending transaction and block convergence.
 - [ ] Record shipment duplicate/retry, disconnect/reconnect, fork-choice, and restart scenarios.
@@ -242,7 +245,7 @@ After a meaningful feature or verification result, update implementation/test st
 - **Ledger P2P:** earlier history said general transaction/block synchronization was absent. Current `PeerLedgerServlet`, `PeerLedgerService`, codecs, and `PeerLedgerSynchronizer` implement pull synchronization; real-node convergence is unverified.
 - **MySQL migration 001:** history records an attempted failure because a foreign key was already absent after the current schema had included the migration's result. Current `schema.sql` has `organization_canonical` and lacks those old coupling constraints. Do not rerun migration 001 without inspecting the target DB.
 - **MySQL outcome:** earlier history contained differing outcomes and uncertain isolation. In the current run BOOT-IT-01 and DB-01 passed on the confirmed `agritrace_test` target; exact fixture cleanup was verified.
-- **Test totals:** history's last shared result was 173 tests passing. The latest full safe build reports 181 tests, 0 failures, 0 errors, 3 DB suites skipped. Targeted BOOT-IT-01 and DB-01 each passed separately afterward.
+- **Test totals:** history's last shared result was 173 tests passing. The latest full safe build reports 188 tests, 0 failures, 0 errors, 3 DB suites skipped. Targeted BOOT-IT-01 and DB-01 each passed separately afterward.
 - **Three-node acceptance:** history and current acceptance docs both identify it as unexecuted. This remains the principal runtime validation gap.
 
 ## Historical-input handling

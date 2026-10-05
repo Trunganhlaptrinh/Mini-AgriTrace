@@ -36,7 +36,10 @@ public final class ConsortiumBootstrapCli {
                 else System.out.println(Base64.getEncoder().encodeToString(bytes));
                 return;
             }
-            if (args.length == 3 && "initialize".equals(args[0])) {
+            if ((args.length == 3 || args.length == 5) && "initialize".equals(args[0])) {
+                boolean credentialMode = args.length == 5 && "--credential-target".equals(args[3]);
+                if (args.length == 5 && !credentialMode)
+                    throw new IllegalArgumentException("Unsupported initialize option");
                 var console = System.console();
                 String json = Files.readString(Path.of(args[1]), StandardCharsets.UTF_8);
                 var service = new ConsortiumBootstrapService(DBConnection::getConnection, new PasswordHasher());
@@ -54,21 +57,35 @@ public final class ConsortiumBootstrapCli {
                 char[] confirmation = null;
                 try {
                     if (status.localAdminUsername() == null) {
-                        if (console == null) throw new IllegalStateException("Creating the local ADMIN requires an interactive secure console");
-                        password = console.readPassword("New local ADMIN password: ");
-                        confirmation = console.readPassword("Confirm local ADMIN password: ");
-                        if (!java.util.Arrays.equals(password, confirmation))
-                            throw new IllegalArgumentException("Password confirmation did not match");
+                        if (credentialMode) {
+                            LocalAdminCredentialFlow.initialize(service, json, args[2], args[4],
+                                    new WindowsCredentialManager());
+                            System.out.println("Bootstrap completed and verified for network " + status.networkId());
+                        } else {
+                            if (console == null) throw new IllegalStateException("Creating the local ADMIN requires an interactive secure console");
+                            password = console.readPassword("New local ADMIN password: ");
+                            confirmation = console.readPassword("Confirm local ADMIN password: ");
+                            if (!java.util.Arrays.equals(password, confirmation))
+                                throw new IllegalArgumentException("Password confirmation did not match");
+                            service.initialize(json, args[2], password);
+                            System.out.println("Bootstrap completed and verified for network " + status.networkId());
+                        }
+                    } else if (credentialMode) {
+                        if (!LocalAdminCredentialFlow.targetForUsername(args[2]).equals(args[4]))
+                            throw new IllegalArgumentException("Credential target does not match the local ADMIN account");
+                        service.initialize(json, args[2], null);
+                        System.out.println("Bootstrap completed and verified for network " + status.networkId());
+                    } else {
+                        service.initialize(json, args[2], null);
+                        System.out.println("Bootstrap completed and verified for network " + status.networkId());
                     }
-                    service.initialize(json, args[2], password);
-                    System.out.println("Bootstrap completed and verified for network " + status.networkId());
                 } finally {
                     if (password != null) java.util.Arrays.fill(password, '\0');
                     if (confirmation != null) java.util.Arrays.fill(confirmation, '\0');
                 }
                 return;
             }
-            throw new IllegalArgumentException("Usage: validate <manifest> | status <manifest> [admin-username] | signing-bytes <manifest> [output-file] | initialize <manifest> <admin-username>");
+            throw new IllegalArgumentException("Usage: validate <manifest> | status <manifest> [admin-username] | signing-bytes <manifest> [output-file] | initialize <manifest> <admin-username> [--credential-target <target>]");
         } catch (Exception exception) {
             System.err.println("Bootstrap failed: " + (exception.getMessage() == null ? "invalid input" : exception.getMessage()));
             System.exit(2);

@@ -4,21 +4,24 @@ This procedure exercises three independently configured AgriTrace nodes (sender,
 
 ## Read-only mTLS and convergence probe
 
-Use Windows PowerShell from the project root. The script prompts for each PKCS#12 password without placing it in command history. It uses the node's certificate to make authenticated HTTPS requests to the other two nodes, verifies the common network ID, and waits for the canonical tips to converge:
+Use PowerShell 7 from the project root. Supply each node's P2P client identity and its outbound server truststore. Passwords can be entered at hidden prompts or read from protected files outside the repository with the corresponding `*-PasswordFile` parameters. The probe uses the truststore CA as a custom trust anchor while retaining certificate-chain, server-auth EKU, and hostname validation; it does not bypass HTTPS validation.
 
 ```powershell
 .\scripts\acceptance\Test-MultiNodeP2P.ps1 `
   -SenderUrl "https://sender.example/AgriTrace" `
   -SenderPfx "C:\secure\sender-peer.p12" `
+  -SenderTrustStore "C:\secure\sender-server-trust.p12" `
   -CarrierUrl "https://carrier.example/AgriTrace" `
   -CarrierPfx "C:\secure\carrier-peer.p12" `
+  -CarrierTrustStore "C:\secure\carrier-server-trust.p12" `
   -OtherUrl "https://other.example/AgriTrace" `
-  -OtherPfx "C:\secure\other-peer.p12"
+  -OtherPfx "C:\secure\other-peer.p12" `
+  -OtherTrustStore "C:\secure\other-server-trust.p12"
 ```
 
 For pending-transaction replication, submit a valid event while it remains pending and pass its lowercase transaction ID using `-ExpectedPendingTransactionId`. Run the probe before a block producer confirms the transaction. A successful probe is runtime evidence for the environment in which it was executed; it is not a substitute for the disruption scenarios below.
 
-The probe is read-only. It does not create users, transactions, blocks, peer registrations, or database records. Server certificates must validate using the machine's normal Windows trust configuration; the probe intentionally does not disable TLS certificate verification.
+The probe is read-only. It does not create users, transactions, blocks, peer registrations, or database records. On Windows, client PFX identities are imported into the current user's temporary key context for Schannel compatibility and released after the probe. The local demo CA is not installed into Windows Root; the probe instead validates against each node's configured outbound truststore. Its revocation setting matches the Java default trust manager used by this application and the local CA has no revocation service.
 
 ## Scenario matrix
 
@@ -35,4 +38,4 @@ Record each row with the run date, node versions/configuration, node logs, expec
 | Fork choice | Isolate nodes after a common block, create independently valid branches using the supported block-production workflow, reconnect, and run the probe. | Every node validates both branches and converges on the branch selected by cumulative work; invalid blocks never become canonical. |
 | Restart persistence | Stop and restart each application instance without changing its own database or identity, then run the probe. | Each node loads its canonical state and resumes peer synchronization; the same network eventually converges. |
 
-The current tool environment has no configured Tomcat instances, three independent MySQL databases, active peer registrations, trusted server certificates, or node PKCS#12 identities. Therefore the real three-node scenarios have not been executed here. Do not mark the operational acceptance complete until the probe and scenario matrix have been run against provisioned nodes. Automated unit tests and a WAR build are not equivalent to this deployment test.
+The local demo has three independent MySQL databases, active peer registrations, node-specific PKCS#12 identities, and the same signed manifest bootstrapped on A/B/C. The three Tomcat nodes are currently running on app ports 8443–8445 and P2P ports 9443–9445. The mTLS locator/convergence probe has passed all six peer directions, and each application HTTPS endpoint returned HTTP 200. The disruption and shipment scenarios in the matrix remain unverified.

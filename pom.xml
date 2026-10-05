@@ -44,6 +44,13 @@
             <artifactId>core</artifactId>
             <version>3.5.3</version>
         </dependency>
+        <!-- Used only by the offline Windows bootstrap CLI, never by the deployed WAR. -->
+        <dependency>
+            <groupId>net.java.dev.jna</groupId>
+            <artifactId>jna</artifactId>
+            <version>5.19.1</version>
+            <scope>provided</scope>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -82,7 +89,7 @@
                 <version>3.5.0</version>
                 <configuration>
                     <mainClass>bootstrap.ConsortiumBootstrapCli</mainClass>
-                    <classpathScope>runtime</classpathScope>
+                    <classpathScope>provided</classpathScope>
                 </configuration>
             </plugin>
         </plugins>

@@ -22,7 +22,16 @@ public final class DBConnection {
         properties.setProperty("password", password);
         properties.setProperty("connectionTimeZone", "UTC");
         properties.setProperty("forceConnectionTimeZoneToSession", "true");
+        ensureMySqlDriverLoaded();
         return DriverManager.getConnection(url, properties);
+    }
+
+    static void ensureMySqlDriverLoaded() throws SQLException {
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver", true, DBConnection.class.getClassLoader());
+        } catch (ClassNotFoundException exception) {
+            throw new SQLException("MySQL JDBC driver is unavailable to the application classloader", exception);
+        }
     }
 
     private static String configuration(String systemProperty, String environmentVariable)

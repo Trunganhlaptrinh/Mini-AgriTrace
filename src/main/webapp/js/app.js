@@ -411,7 +411,7 @@
             }
         );
         showResult(card, result.message, result.data?.transactionId);
-        await refreshInbox();
+        showNotice(result.message, "success");
     }
 
     async function loadPublicTrace(batchCode) {

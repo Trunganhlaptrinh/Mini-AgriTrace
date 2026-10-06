@@ -7,3 +7,6 @@ target/
 *.key
 *.pem
 *.log
+
+# Temporary directories created by browser E2E test runner
+scripts/acceptance/temp_keys_*/

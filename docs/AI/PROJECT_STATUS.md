@@ -1,6 +1,6 @@
 # AgriTrace Project Status
 
-**Status date:** 2026-10-06
+**Status date:** 2026-10-06 (updated after security hardening + browser E2E scripts commit)
 **Authority:** Current repository plus the Maven verification and local three-node acceptance recorded for this status date. Historical Copilot statements are context only. This is local demo evidence, not production certification.
 
 ## 1. Project Overview
@@ -82,13 +82,14 @@ These are repository-backed flow descriptions; the local acceptance verifies the
 - Password hashing, login/session, role and CSRF enforcement have automated coverage.
 - Session cookie configuration includes HttpOnly, Secure, and SameSite=Lax.
 - Canonical projection availability now requires organization status `ACTIVE`; protected requests recheck local account/canonical availability and invalidate unavailable sessions. Public trace/QR routes remain intentionally independent of account login state.
-- Login and current-password checks use a bounded in-memory throttle per JVM: 8 account failures or 30 remote-address failures within five minutes trigger a 60-second wait. Stale entries expire and storage is capped at 20,000 entries. Node counters are independent; this is not a network-wide limiter.
-- Common application responses include CSP, `X-Content-Type-Options`, `X-Frame-Options`, Referrer Policy, and Permissions Policy. The current same-origin CSP does not allow inline scripts/styles or `eval`. HSTS is intentionally deployment-specific and is not sent by the localhost demo.
+- Login and current-password checks use a bounded in-memory throttle per JVM: 8 account failures or 30 remote-address failures within five minutes trigger a 60-second wait. Stale entries expire and storage is capped at 20,000 entries. Node counters are independent; this is not a network-wide limiter. **VERIFIED** by `AuthenticationThrottleTest` (4 tests).
+- Common application responses include CSP, `X-Content-Type-Options`, `X-Frame-Options`, Referrer Policy, and Permissions Policy. The current same-origin CSP does not allow inline scripts/styles or `eval`. HSTS is intentionally deployment-specific and is not sent by the localhost demo. **VERIFIED** by `SecurityHeadersFilterTest` (2 tests).
 - Organization signatures and local private-key custody are separate from public manifest/network data.
 - Local TLS/mTLS worked with the demo CA and per-node identities. This does not establish production PKI suitability or operational rotation/revocation readiness.
 - No CORS allow-origin header/implementation was found in the reviewed source.
 - The controlled local-demo credential helper still uses the Windows clipboard temporarily; this is accepted for this workflow and remains unsuitable for a shared/untrusted workstation.
 - `currentHolder` remains the last confirmed holder during `IN_TRANSIT` and changes to the recipient after a valid `RECEIVED` event.
+- `AuthenticationSessionServlet` session-invalidation and re-login flow verified by `AuthenticationSessionServletTest` (3 tests). `LoginServlet` request handling verified by `LoginServletTest` (unit, 10 tests).
 - No formal penetration test, production threat-model review, or production secrets/key recovery exercise is evidenced.
 
 ## 8. Current UI State
@@ -100,7 +101,8 @@ These are repository-backed flow descriptions; the local acceptance verifies the
 | Carrier proposal and endorsement | VERIFIED for happy path | Real local multi-node product acceptance. |
 | Retailer final state and provenance | VERIFIED for tested lifecycle | Retailer saw final in-transit shipment state and expected provenance. |
 | Public trace and SVG QR endpoint | VERIFIED | Same real batch; QR returned HTTP 200/SVG. Scanner UX was not tested. |
-| Browser E2E/accessibility/responsive behavior | NOT VERIFIED | No browser-driven suite/evidence in this run. |
+| Browser E2E smoke script (UI-01) | SCRIPTED — requires live nodes | `scripts/acceptance/Test-BrowserE2E.js` exercises Login → Key Import → Web Crypto P-256 signing → Batch event → Shipment proposal/endorsement → Public trace/QR via headless Chrome CDP against a mock backend. Full live-node run requires three running Tomcat instances. |
+| Browser accessibility/responsive behavior | NOT VERIFIED | No accessibility audit or multi-viewport evidence in this run. |
 
 ## 9. Database State
 
@@ -112,7 +114,7 @@ These are repository-backed flow descriptions; the local acceptance verifies the
 
 ## 10. Test Status
 
-**Latest build (2026-10-06):** `mvn verify` succeeded and packaged the WAR: **188 tests, 0 failures, 0 errors, 3 skipped**. Database integration opt-ins were disabled; the skipped database suites were not run in this invocation. Thus 185 tests passed, including unit/Servlet/service coverage.
+**Latest build (2026-10-06, post security hardening):** `mvn test` passed: **201 tests, 0 failures, 0 errors, 3 skipped**. Database integration opt-ins were disabled; the skipped database suites were not run in this invocation. New tests added in the security hardening commit (e834d6b) include: `AuthenticationThrottleTest` (4), `SecurityHeadersFilterTest` (2), `LoginServletTest` (10), `AuthenticationSessionServletTest` (3), `UserDAOTest` (4), `CanonicalProjectionDAOTest` (1), `AuthenticationServiceTest` additions.
 
 **Latest local runtime acceptance (2026-10-06):** A/B/C Tomcat and DB containers healthy; app ports 8443–8445 and P2P ports 9443–9445 listening; application HTTPS endpoints returned HTTP 200; mTLS passed 6/6 directions; locator and common network identity passed; product shipment/provenance, public trace, and SVG QR passed; common canonical chain tip height 7; Node C interruption/recovery passed and convergence returned. No full adversarial fork, negative-certificate, browser E2E, or production deployment acceptance is claimed.
 
@@ -130,11 +132,13 @@ These are repository-backed flow descriptions; the local acceptance verifies the
 - Farmer batch → carrier proposal/endorsement → block confirmation → retailer provenance happy path verified.
 - Public trace and QR for the real batch verified.
 - A/B/C convergence and tested Node C interruption/recovery verified.
-- Maven verification passed with the test totals above.
+- Maven test passed with 201 tests, 0 failures, 0 errors, 3 DB integration skipped.
+- Security hardening: authentication throttle, security response headers, session servlet, login servlet — all implemented and unit-tested.
+- Browser E2E smoke script (`Test-BrowserE2E.js` + `Test-BrowserE2E.ps1`) created; exercises the full Farmer → Carrier → Retailer journey via headless Chrome CDP with real P-256 Web Crypto signing against a protocol-compatible mock backend.
 
 ## 13. Implemented But Not Fully Verified
 
-- Browser UI paths exist, but no browser automation/accessibility/manual scanner evidence is recorded.
+- Browser E2E smoke script exists (`scripts/acceptance/Test-BrowserE2E.js`) but has not been run against live Tomcat nodes; mock backend pass is not a substitute for live-node acceptance.
 - Fork-choice/reorganization is unit/DB tested, but no adversarial real-node branch competition was run in this pass.
 - Peer certificate rejection for an unregistered/revoked peer and duplicate shipment delivery idempotency were not separately run.
 - Production PKI, TLS policy, key rotation, operational backup/restore, and deployment configuration remain unverified.
@@ -162,19 +166,19 @@ No blocker remains for the local three-node demo happy path. Production deployme
 
 | ID | Priority | Task | Category/status | Missing work | Likely modules | Verification |
 |---|---|---|---|---|---|---|
-| UI-01 | P1 | Browser-based smoke/E2E of the accepted product journey | Testing — not verified | Exercise login, Web Crypto signing, shipment workflow, public trace and QR in supported browsers. | `src/main/webapp/`, Servlet APIs, acceptance setup | Browser automation/manual smoke with console/network checks and QR URL assertion. |
+| UI-01 | P1 | Run browser E2E smoke against live nodes | Testing — scripted, not live-verified | Execute `scripts/acceptance/Test-BrowserE2E.ps1` against running three-node Tomcat setup; check console errors, Web Crypto signing, and QR endpoint. | `scripts/acceptance/Test-BrowserE2E.js`, live nodes | Browser passes with 0 console errors, all assertions green, QR SVG returned. |
 | MP-01-MATRIX | P2 | Complete remaining real-node negative and adversarial scenarios | Integration — partial | Negative peer certificate, duplicate shipment retry, real-node competing forks. | `scripts/acceptance/`, P2P and blockchain modules | Run remaining matrix cases; verify rejection/idempotency/canonical outcome. |
-| SEC-01 | P3 | Security hardening/review | Security — partial | Evaluate response headers, production TLS/PKI, revocation/rotation, threat model and secrets lifecycle. | `security/`, `network/`, container/deployment config | Review plus negative tests and deployment-specific validation. |
+| SEC-01 | P3 | Production security review | Security — unit-tested, production not verified | Production TLS/PKI, revocation/rotation, threat model and secrets lifecycle. Auth throttle and headers are unit-tested; production ingress rate-limit still needed. | `security/`, `network/`, container/deployment config | Review plus negative tests and deployment-specific validation. |
 | OPS-01 | P4 | Production provisioning and recovery runbook | Infrastructure/documentation — partial | Choose target topology; rehearse install, migration, backup, restore, monitoring and recovery. | `database/`, `scripts/`, `docs/`, deployment config | Staging rehearsal with isolated data and documented recovery results. |
 | DOC-01 | P5 | Maintain docs against verified changes | Documentation — ongoing | Keep architecture, status, acceptance and operator instructions synchronized. | `docs/`, `README.md`, this file | Review docs against code and fresh acceptance evidence. |
 
 ## 18. NEXT RECOMMENDED TASK
 
-**UI-01 — Run a browser-based smoke/E2E of the already accepted Farmer → Carrier → Retailer journey, including public trace and QR.** The server/API happy path is verified, while the actual rendered browser flow and client-side key/signing interactions remain unverified. This closes the largest gap between API acceptance and what intended users operate, without changing the verified network architecture.
+**UI-01 — Run the browser E2E smoke test against live nodes.** The script `scripts/acceptance/Test-BrowserE2E.ps1` (which invokes `Test-BrowserE2E.js` via Node.js) is ready. With three local Tomcat nodes running (ports 8443–8445), execute the script to exercise Login → Key Import → Web Crypto P-256 batch signing → Shipment proposal/endorsement → Public trace/QR in headless Chrome. This converts the scripted coverage into live-node evidence and closes the last gap in the UI-01 acceptance row.
 
 ## 19. Verification Checklist
 
-- [x] Maven verify: 188 tests, 0 failures/errors, 3 DB integration tests skipped by opt-in configuration.
+- [x] Maven test: 201 tests, 0 failures/errors, 3 DB integration tests skipped by opt-in configuration.
 - [x] Three local nodes initialized and running; app/P2P ports respond/listen.
 - [x] HTTPS endpoints and all six mTLS directions verified.
 - [x] Farmer batch and block production verified.
@@ -183,7 +187,10 @@ No blocker remains for the local three-node demo happy path. Production deployme
 - [x] Public trace and SVG QR verified for the same batch.
 - [x] A/B/C canonical convergence verified at height 7.
 - [x] Tested interruption/recovery and reconvergence verified.
-- [ ] Browser-driven E2E/accessibility/scanner review.
+- [x] Authentication throttle implemented and unit-tested (AuthenticationThrottleTest).
+- [x] Security response headers implemented and unit-tested (SecurityHeadersFilterTest).
+- [x] Browser E2E smoke script created (Test-BrowserE2E.js + Test-BrowserE2E.ps1).
+- [ ] Browser E2E smoke run against live three-node Tomcat (UI-01).
 - [ ] Negative certificate, duplicate delivery, and adversarial real-node fork acceptance.
 - [ ] Production TLS/PKI, secrets, backup/restore, monitoring, and deployment rehearsal.
 

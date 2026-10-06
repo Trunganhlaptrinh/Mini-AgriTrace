@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-# Allow untrusted SSL for local self-signed demo certs
+# Allow untrusted SSL for local self-signed demo certs if .NET is used
 [System.Net.ServicePointManager]::ServerCertificateValidationCallback = { $true }
 
 Write-Host "=================================================================" -ForegroundColor Cyan
@@ -34,6 +34,35 @@ function Add-TestResult([string]$Category, [string]$TestName, [bool]$Passed, [st
     }
 }
 
+function Invoke-Curl {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Url,
+        [string]$Method = "GET",
+        [string]$Body = $null,
+        [hashtable]$Headers = @{}
+    )
+    $curlArgs = @("-sk", "-X", $Method)
+    foreach ($k in $Headers.Keys) {
+        $curlArgs += @("-H", "$($k): $($Headers[$k])")
+    }
+    if ($null -ne $Body -and $Body -ne "") {
+        $curlArgs += @("-d", $Body)
+    }
+    $curlArgs += $Url
+    $output = & curl.exe @curlArgs 2>$null
+    return ($output -join "`n")
+}
+
+function Get-CurlStatusCode {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Url
+    )
+    $code = & curl.exe -sk -o "NUL" -w "%{http_code}" $Url 2>$null
+    return [string]$code
+}
+
 # 1. Wait for services to respond
 Write-Host "`n[1/5] Checking Node Reachability..." -ForegroundColor Yellow
 $nodes = @(
@@ -45,22 +74,21 @@ $nodes = @(
 foreach ($node in $nodes) {
     Write-Host "  Waiting for $($node.Name) at $($node.Url) ... " -NoNewline
     $ready = $false
+    $statusCode = ""
     for ($i = 0; $i -lt 30; $i++) {
-        try {
-            $resp = Invoke-WebRequest -Uri "$($node.Url)/" -Method Get -SkipCertificateCheck -TimeoutSec 3 -ErrorAction SilentlyContinue
-            if ($resp.StatusCode -eq 200 -or $resp.StatusCode -eq 302) {
-                $ready = $true
-                break
-            }
-        } catch { }
+        $statusCode = Get-CurlStatusCode -Url "$($node.Url)/"
+        if ($statusCode -eq "200" -or $statusCode -eq "302") {
+            $ready = $true
+            break
+        }
         Start-Sleep -Seconds 2
     }
     if ($ready) {
-        Write-Host "UP" -ForegroundColor Green
-        Add-TestResult "Reachability" "$($node.Name) HTTPS endpoint reachable" $true "HTTP $($resp.StatusCode)"
+        Write-Host "UP (HTTP $statusCode)" -ForegroundColor Green
+        Add-TestResult "Reachability" "$($node.Name) HTTPS endpoint reachable" $true "HTTP $statusCode"
     } else {
         Write-Host "TIMEOUT" -ForegroundColor Red
-        Add-TestResult "Reachability" "$($node.Name) HTTPS endpoint reachable" $false "Failed to respond within 60s"
+        Add-TestResult "Reachability" "$($node.Name) HTTPS endpoint reachable" $false "Failed to respond within 60s (status: $statusCode)"
     }
 }
 
@@ -68,8 +96,9 @@ foreach ($node in $nodes) {
 Write-Host "`n[2/5] Verifying Consortium Network Identity..." -ForegroundColor Yellow
 foreach ($node in $nodes) {
     try {
-        $resp = Invoke-RestMethod -Uri "$($node.Url)/api/v1/network" -Method Get -SkipCertificateCheck -TimeoutSec 5
-        $netId = $resp.data.networkId
+        $raw = Invoke-Curl -Url "$($node.Url)/api/v1/network"
+        $json = $raw | ConvertFrom-Json
+        $netId = $json.data.networkId
         $match = ($netId -eq "agritrace-docker-demo-v1")
         Add-TestResult "Consortium" "$($node.Name) networkId verification" $match "networkId: $netId"
     } catch {
@@ -87,9 +116,10 @@ $adminCredentials = @(
 
 foreach ($cred in $adminCredentials) {
     try {
-        $body = @{ username = $cred.User; password = $cred.Pass } | ConvertTo-Json
-        $resp = Invoke-RestMethod -Uri "$($cred.Url)/api/v1/auth/login" -Method Post -Body $body -ContentType "application/json" -SkipCertificateCheck -TimeoutSec 5
-        $role = $resp.data.role
+        $body = "{`"username`":`"$($cred.User)`",`"password`":`"$($cred.Pass)`"}"
+        $raw = Invoke-Curl -Url "$($cred.Url)/api/v1/auth/login" -Method "POST" -Body $body -Headers @{ "Content-Type" = "application/json" }
+        $json = $raw | ConvertFrom-Json
+        $role = $json.data.role
         $match = ($role -eq "ADMIN")
         Add-TestResult "Authentication" "$($cred.Name) login for $($cred.User)" $match "role: $role"
     } catch {
@@ -99,21 +129,20 @@ foreach ($cred in $adminCredentials) {
 
 # 4. Verify P2P mTLS Port Security
 Write-Host "`n[4/5] Testing P2P mTLS Port Security..." -ForegroundColor Yellow
-try {
-    # Call P2P port 9443 without client cert - should fail TLS handshake or 401/403
-    $resp = Invoke-WebRequest -Uri "$P2pAUrl/api/v1/internal/p2p/blocks" -Method Get -SkipCertificateCheck -TimeoutSec 3 -ErrorAction SilentlyContinue
-    Add-TestResult "Security" "P2P port rejects non-mTLS requests" $false "Unexpectedly succeeded with HTTP $($resp.StatusCode)"
-} catch {
-    # Expected: SSL error, connection reset, or 401/403
-    Add-TestResult "Security" "P2P port rejects non-mTLS requests" $true "Correctly refused client without certificate ($($_.Exception.Message))"
+$p2pCode = Get-CurlStatusCode -Url "$P2pAUrl/api/v1/internal/p2p/blocks"
+# curl fails handshake or returns 000, 401, 403
+if ($p2pCode -eq "000" -or $p2pCode -eq "401" -or $p2pCode -eq "403" -or [string]::IsNullOrEmpty($p2pCode)) {
+    Add-TestResult "Security" "P2P port rejects non-mTLS requests" $true "Correctly refused client without certificate (status: $p2pCode)"
+} else {
+    Add-TestResult "Security" "P2P port rejects non-mTLS requests" $false "Unexpectedly succeeded with HTTP $p2pCode"
 }
 
 # 5. Public Trace QR generation
 Write-Host "`n[5/5] Testing Public QR Trace Endpoint..." -ForegroundColor Yellow
 try {
-    $resp = Invoke-WebRequest -Uri "$NodeAUrl/api/v1/public/trace-qr/DEMO-BATCH-001" -Method Get -SkipCertificateCheck -TimeoutSec 5
-    $isSvg = $resp.StatusCode -eq 200 -and $resp.Content -match "<svg"
-    Add-TestResult "Public API" "Public trace QR SVG endpoint returns 200 with SVG data" $isSvg "HTTP $($resp.StatusCode)"
+    $qrOutput = Invoke-Curl -Url "$NodeAUrl/api/v1/public/trace-qr/DEMO-BATCH-001"
+    $isSvg = ($qrOutput -match "<svg")
+    Add-TestResult "Public API" "Public trace QR SVG endpoint returns 200 with SVG data" $isSvg "Contains SVG: $isSvg"
 } catch {
     Add-TestResult "Public API" "Public trace QR SVG endpoint returns 200 with SVG data" $false $_.Exception.Message
 }

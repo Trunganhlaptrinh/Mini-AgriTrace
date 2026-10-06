@@ -57,6 +57,7 @@ NODE_SECRETS_DIR="${NODE_DATA_DIR}/secrets"
 CATALINA_BASE_DIR="${NODE_DATA_DIR}/catalina"
 MANIFEST_FILE="${SHARED_MANIFEST_DIR}/consortium-manifest.json"
 LOCK_DIR="${SHARED_PKI_DIR}/.locks"
+APP_CLASSPATH="/opt/agritrace/target/AgriTrace/WEB-INF/classes:/opt/agritrace/target/AgriTrace/WEB-INF/lib/*"
 
 log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [Node ${NODE_ID}] $*"; }
 die() { log "ERROR: $*" >&2; exit 1; }
@@ -436,46 +437,34 @@ EOF
     cd /opt/agritrace
 
     # Step 1: Generate signing requests
-    mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.ConsortiumManifestGenerator" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="requests ${SHARED_MANIFEST_DIR}/descriptor.json ${SHARED_MANIFEST_DIR}/signing-requests.json" \
-        2>/dev/null \
+    java -cp "${APP_CLASSPATH}" bootstrap.ConsortiumManifestGenerator \
+        requests "${SHARED_MANIFEST_DIR}/descriptor.json" "${SHARED_MANIFEST_DIR}/signing-requests.json" \
         || die "ConsortiumManifestGenerator requests failed"
 
     log "Signing requests generated. Signing with admin key ..."
 
     # Step 2: Sign all governance requests with admin key using DemoConsortiumSigner
-    mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.DemoConsortiumSigner" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="sign-requests ${SHARED_MANIFEST_DIR}/signing-requests.json ${ADMIN_KEY} ${SHARED_MANIFEST_DIR}/governance-signatures.json" \
+    java -cp "${APP_CLASSPATH}" bootstrap.DemoConsortiumSigner \
+        sign-requests "${SHARED_MANIFEST_DIR}/signing-requests.json" "${ADMIN_KEY}" "${SHARED_MANIFEST_DIR}/governance-signatures.json" \
         || die "Governance signing failed"
 
     log "Governance signatures created. Assembling unsigned manifest ..."
 
     # Step 3: Assemble unsigned manifest
-    mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.ConsortiumManifestGenerator" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="assemble ${SHARED_MANIFEST_DIR}/descriptor.json ${SHARED_MANIFEST_DIR}/governance-signatures.json ${SHARED_MANIFEST_DIR}/unsigned-manifest.json" \
+    java -cp "${APP_CLASSPATH}" bootstrap.ConsortiumManifestGenerator \
+        assemble "${SHARED_MANIFEST_DIR}/descriptor.json" "${SHARED_MANIFEST_DIR}/governance-signatures.json" "${SHARED_MANIFEST_DIR}/unsigned-manifest.json" \
         || die "ConsortiumManifestGenerator assemble failed"
 
     log "Unsigned manifest assembled. Signing manifest ..."
 
     # Step 4: Sign the manifest using DemoConsortiumSigner
-    mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.DemoConsortiumSigner" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="sign-manifest ${SHARED_MANIFEST_DIR}/unsigned-manifest.json ${ADMIN_KEY} ${SHARED_MANIFEST_DIR}/manifest-signature.txt" \
+    java -cp "${APP_CLASSPATH}" bootstrap.DemoConsortiumSigner \
+        sign-manifest "${SHARED_MANIFEST_DIR}/unsigned-manifest.json" "${ADMIN_KEY}" "${SHARED_MANIFEST_DIR}/manifest-signature.txt" \
         || die "Manifest signing failed"
 
     # Step 5: Finalize manifest
-    mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.ConsortiumManifestGenerator" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="finalize ${SHARED_MANIFEST_DIR}/unsigned-manifest.json ${SHARED_MANIFEST_DIR}/manifest-signature.txt ${MANIFEST_FILE}" \
-        2>/dev/null \
+    java -cp "${APP_CLASSPATH}" bootstrap.ConsortiumManifestGenerator \
+        finalize "${SHARED_MANIFEST_DIR}/unsigned-manifest.json" "${SHARED_MANIFEST_DIR}/manifest-signature.txt" "${MANIFEST_FILE}" \
         || die "ConsortiumManifestGenerator finalize failed"
 
     log "Signed consortium manifest created: ${MANIFEST_FILE}"
@@ -516,7 +505,7 @@ configure_tomcat() {
         -e "s|@APP_SERVER_KEYSTORE@|${SERVER_KEYSTORE_PATH}|g" \
         -e "s|@APP_SERVER_PASSWORD@|${SERVER_PASS}|g" \
         -e "s|@P2P_SERVER_KEYSTORE@|${SERVER_KEYSTORE_PATH}|g" \
-        -e "s|@P2P_SERVER_PASSWORD@|${PEER_PASS}|g" \
+        -e "s|@P2P_SERVER_PASSWORD@|${SERVER_PASS}|g" \
         -e "s|@P2P_CLIENT_TRUSTSTORE@|${TRUSTSTORE_PATH}|g" \
         -e "s|@P2P_CLIENT_TRUSTSTORE_PASSWORD@|${TRUST_PASS}|g" \
         /opt/agritrace/server.xml.template \
@@ -545,11 +534,8 @@ bootstrap_node() {
 
     # Check current bootstrap status first
     local status_output
-    status_output=$(mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.ConsortiumBootstrapCli" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="status ${MANIFEST_FILE} ${ADMIN_USERNAME}" \
-        2>/dev/null) || true
+    status_output=$(java -cp "${APP_CLASSPATH}" bootstrap.ConsortiumBootstrapCli \
+        status "${MANIFEST_FILE}" "${ADMIN_USERNAME}" 2>/dev/null) || true
 
     local state
     state=$(echo "${status_output}" | grep -oP '"state"\s*:\s*"\K[^"]+' | head -1 || echo "UNKNOWN")
@@ -567,10 +553,8 @@ bootstrap_node() {
 
     # Run initialize with password via stdin
     log "Initializing node ${NODE_ID} ..."
-    printf "%s\n%s\n" "${ADMIN_PASSWORD}" "${ADMIN_PASSWORD}" | mvn -q -B exec:java \
-        -Dexec.mainClass="bootstrap.ConsortiumBootstrapCli" \
-        -Dexec.classpathScope="compile" \
-        -Dexec.args="initialize ${MANIFEST_FILE} ${ADMIN_USERNAME}" \
+    printf "%s\n%s\n" "${ADMIN_PASSWORD}" "${ADMIN_PASSWORD}" | java -cp "${APP_CLASSPATH}" bootstrap.ConsortiumBootstrapCli \
+        initialize "${MANIFEST_FILE}" "${ADMIN_USERNAME}" \
         || die "Bootstrap initialize failed for node ${NODE_ID}"
 
     log "Node ${NODE_ID} bootstrap completed."

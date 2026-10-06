@@ -1,7 +1,7 @@
 # ============================================================
 # AgriTrace Demo Dockerfile — Multi-stage build
 # Stage 1: Maven build (produces AgriTrace.war)
-# Stage 2: Tomcat 10.1 runtime image
+# Stage 2: Official Tomcat 10.1 (Temurin JDK 17) runtime image
 # No secrets, no private keys, no local paths embedded.
 # ============================================================
 
@@ -10,44 +10,33 @@ FROM eclipse-temurin:17-jdk-jammy AS builder
 
 WORKDIR /build
 
-# Copy Maven wrapper / pom first for layer caching
-COPY pom.xml ./
-COPY src ./src
-
 # Install Maven
 RUN apt-get update -qq && apt-get install -y --no-install-recommends maven && rm -rf /var/lib/apt/lists/*
 
-# Build WAR (skip tests — unit tests require network, run separately)
+# Copy pom.xml and source code
+COPY pom.xml ./
+COPY src ./src
+
+# Build WAR (skip tests — unit tests run separately)
 RUN mvn -q -B clean package -DskipTests
 
 # ---- Stage 2: Runtime --------------------------------------
-FROM eclipse-temurin:17-jdk-jammy AS runtime
+FROM tomcat:10.1-jdk17-temurin-jammy AS runtime
 
 LABEL org.opencontainers.image.title="AgriTrace Demo Node"
 LABEL org.opencontainers.image.description="Mini-AgriTrace 3-node demo — single Tomcat node"
 
-# Install Tomcat 10.1 and tools
-ARG TOMCAT_VERSION=10.1.39
+# Install tools needed for bootstrap and mTLS
 RUN apt-get update -qq \
     && apt-get install -y --no-install-recommends \
         curl \
         openssl \
         maven \
-        wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Download and install Tomcat
-RUN wget -q "https://archive.apache.org/dist/tomcat/tomcat-10/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz" \
-    -O /tmp/tomcat.tar.gz \
-    && tar -xzf /tmp/tomcat.tar.gz -C /opt \
-    && mv /opt/apache-tomcat-${TOMCAT_VERSION} /opt/tomcat \
-    && rm /tmp/tomcat.tar.gz \
-    # Remove default apps except ROOT (need for 404 redirect)
-    && rm -rf /opt/tomcat/webapps/examples \
-               /opt/tomcat/webapps/docs \
-               /opt/tomcat/webapps/host-manager \
-               /opt/tomcat/webapps/manager \
-               /opt/tomcat/webapps/ROOT
+# Link standard /opt/tomcat path to Tomcat installation and remove sample apps
+RUN ln -s /usr/local/tomcat /opt/tomcat \
+    && rm -rf /usr/local/tomcat/webapps/* /usr/local/tomcat/webapps.dist
 
 ENV CATALINA_HOME=/opt/tomcat
 ENV CATALINA_BASE=/data/catalina
@@ -69,8 +58,8 @@ RUN chmod +x /opt/agritrace/docker-entrypoint.sh
 # Runtime data volume (Catalina base, PKI, manifests — node-specific)
 VOLUME ["/data"]
 
-# App HTTPS port and P2P mTLS port (set by server.xml at runtime)
-EXPOSE 8443 9443
+# App HTTPS and P2P mTLS ports
+EXPOSE 8443 8444 8445 9443 9444 9445
 
 WORKDIR /opt/agritrace
 

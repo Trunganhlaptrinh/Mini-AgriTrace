@@ -47,19 +47,22 @@ class AuthenticationServiceTest {
     }
 
     @Test
-    void refusesLocallyInactiveAndCanonicallyUnavailableAccountsAfterPasswordCheck() {
+    void refusesInactiveAndCanonicallyUnavailableAccountsWithTheGenericLoginFailure() {
         AuthenticationService locallyInactive = service(account(false, true, activePasswordHash));
         AuthenticationException inactive = assertThrows(
                 AuthenticationException.class,
                 () -> locallyInactive.authenticate("farmer.one", "correct-password".toCharArray()));
-        assertEquals(403, inactive.getHttpStatus());
-        assertEquals("ACCOUNT_INACTIVE", inactive.getCode());
+        assertEquals(401, inactive.getHttpStatus());
+        assertEquals("INVALID_CREDENTIALS", inactive.getCode());
+        assertEquals("Invalid username or password", inactive.getMessage());
 
         AuthenticationService organizationUnavailable = service(account(true, false, activePasswordHash));
         AuthenticationException unavailable = assertThrows(
                 AuthenticationException.class,
                 () -> organizationUnavailable.authenticate("farmer.one", "correct-password".toCharArray()));
-        assertEquals("ACCOUNT_INACTIVE", unavailable.getCode());
+        assertEquals(401, unavailable.getHttpStatus());
+        assertEquals(inactive.getCode(), unavailable.getCode());
+        assertEquals(inactive.getMessage(), unavailable.getMessage());
     }
 
     @Test

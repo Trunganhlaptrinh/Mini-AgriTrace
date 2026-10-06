@@ -10,9 +10,21 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 import java.io.IOException;
+import dal.PersistenceException;
+import dal.UserDAO;
 
 @WebFilter("/api/v1/*")
 public final class AuthenticationFilter implements Filter {
+    private final AccountAuthorizer accountAuthorizer;
+
+    public AuthenticationFilter() {
+        this(new UserDAO()::isAccountAuthorized);
+    }
+
+    AuthenticationFilter(AccountAuthorizer accountAuthorizer) {
+        this.accountAuthorizer = java.util.Objects.requireNonNull(accountAuthorizer, "accountAuthorizer");
+    }
+
     @Override
     public void doFilter(
             ServletRequest servletRequest,
@@ -27,9 +39,22 @@ public final class AuthenticationFilter implements Filter {
             return;
         }
         HttpSession session = request.getSession(false);
-        if (session == null || session.getAttribute(SessionAttributes.USER_ID) == null) {
+        if (session == null || !(session.getAttribute(SessionAttributes.USER_ID) instanceof Long userId)) {
             ApiJson.write(response, HttpServletResponse.SC_UNAUTHORIZED,
                     ApiJson.error("Authentication is required", "UNAUTHENTICATED"));
+            return;
+        }
+        try {
+            if (!accountAuthorizer.isAuthorized(userId)) {
+                session.invalidate();
+                ApiJson.write(response, HttpServletResponse.SC_UNAUTHORIZED,
+                        ApiJson.error("Authentication is required", "UNAUTHENTICATED"));
+                return;
+            }
+        } catch (PersistenceException exception) {
+            request.getServletContext().log("Session authorization lookup failed", exception);
+            ApiJson.write(response, HttpServletResponse.SC_SERVICE_UNAVAILABLE,
+                    ApiJson.error("Authentication service is unavailable", "AUTHENTICATION_UNAVAILABLE"));
             return;
         }
         chain.doFilter(request, response);
@@ -76,5 +101,10 @@ public final class AuthenticationFilter implements Filter {
         return servletPath != null
                 && ("/api/v1/internal/p2p".equals(servletPath)
                         || servletPath.startsWith("/api/v1/internal/p2p/"));
+    }
+
+    @FunctionalInterface
+    interface AccountAuthorizer {
+        boolean isAuthorized(long userId);
     }
 }

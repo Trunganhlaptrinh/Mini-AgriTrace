@@ -44,6 +44,11 @@ public final class UserDAO {
             FROM users
             WHERE user_id = ?
             """;
+    private static final String ACCOUNT_AUTHORIZED = """
+            SELECT is_active, organization_canonical
+            FROM users
+            WHERE user_id = ?
+            """;
 
     private final ConnectionProvider connectionProvider;
 
@@ -81,6 +86,25 @@ public final class UserDAO {
             }
         } catch (SQLException exception) {
             throw new PersistenceException("Could not read local account", exception);
+        }
+    }
+
+    /** Returns whether an existing session still belongs to an active local account
+     * whose organization is available in the latest canonical projection. */
+    public boolean isAccountAuthorized(long userId) {
+        if (userId <= 0) {
+            return false;
+        }
+        try (Connection connection = connectionProvider.getConnection();
+             PreparedStatement statement = connection.prepareStatement(ACCOUNT_AUTHORIZED)) {
+            statement.setLong(1, userId);
+            try (ResultSet result = statement.executeQuery()) {
+                return result.next()
+                        && result.getBoolean("is_active")
+                        && result.getBoolean("organization_canonical");
+            }
+        } catch (SQLException exception) {
+            throw new PersistenceException("Could not verify account authorization", exception);
         }
     }
 

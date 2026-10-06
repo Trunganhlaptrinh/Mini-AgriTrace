@@ -50,8 +50,7 @@ Success: `200 OK`; creates an HTTP session and returns the account context. Pass
 }
 ```
 
-Failures: `400` invalid request, `401` invalid credentials, `403` inactive account.
-The server reads only a bounded JSON body, rotates any existing session, creates a fresh session and CSRF token, and returns the token once for subsequent state-changing requests. The session cookie is HttpOnly, Secure, and SameSite=Lax. Local account activation and canonical organization availability must both be true for authentication to succeed.
+Failures: `400` invalid request, `401` generic invalid credentials/account unavailable, `429` temporary authentication throttling (includes `Retry-After`). Unknown users, incorrect passwords, and locally/canonically unavailable accounts receive the same generic `401` response. The server reads only a bounded JSON body, rotates any existing session, creates a fresh session and CSRF token, and returns the token once for subsequent state-changing requests. The session cookie is HttpOnly, Secure, and SameSite=Lax. Local account activation and canonical ACTIVE organization availability must both be true for authentication to succeed. A bounded in-memory limiter applies per JVM to login attempts; separate nodes do not share counters.
 
 ### `GET /auth/me`
 
@@ -64,6 +63,8 @@ Requires an authenticated session and CSRF token. Invalidates the session and re
 ### `POST /auth/password`
 
 Requires an authenticated session, CSRF token, and JSON fields `currentPassword` and `newPassword`. New passwords must contain 12 to 1024 characters. The current password is verified before an optimistic conditional update that also checks the account remains active and canonically available. Success returns a replacement CSRF token for the current session; password changes do not rotate an organization's signing key. Other already-issued sessions are not revoked by this endpoint.
+
+Repeated current-password failures are subject to the same per-JVM temporary authentication throttle. A protected request rechecks the local account and canonical organization availability; after the node's projection reflects a SUSPENDED or REVOKED organization, its existing user session is invalidated on the next protected request. Public trace and QR remain public and do not depend on login state.
 
 ## 3. Organizations and governance
 

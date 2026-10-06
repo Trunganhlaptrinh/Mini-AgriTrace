@@ -3,6 +3,7 @@ package dal;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -12,6 +13,36 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class UserDAOTest {
+    @Test
+    void checksActiveAccountAndCanonicalOrganizationAvailabilityForExistingSessions() {
+        Map<String, Boolean> columns = Map.of("is_active", true, "organization_canonical", false);
+        String[] sql = new String[1];
+        UserDAO userDAO = new UserDAO(() -> proxy(Connection.class, (method, args) -> switch (method) {
+            case "prepareStatement" -> {
+                sql[0] = (String) args[0];
+                yield proxy(PreparedStatement.class, (statementMethod, statementArgs) -> switch (statementMethod) {
+                    case "setLong", "close" -> null;
+                    case "executeQuery" -> {
+                        boolean[] read = {false};
+                        yield proxy(ResultSet.class, (resultMethod, resultArgs) -> switch (resultMethod) {
+                            case "next" -> !read[0] && (read[0] = true);
+                            case "getBoolean" -> columns.get(resultArgs[0]);
+                            case "close" -> null;
+                            default -> throw new UnsupportedOperationException(resultMethod);
+                        });
+                    }
+                    default -> throw new UnsupportedOperationException(statementMethod);
+                });
+            }
+            case "close" -> null;
+            default -> throw new UnsupportedOperationException(method);
+        }));
+
+        assertFalse(userDAO.isAccountAuthorized(12));
+        assertTrue(sql[0].contains("is_active"));
+        assertTrue(sql[0].contains("organization_canonical"));
+    }
+
     @Test
     void updatesPasswordOnlyWhenOldHashAndAccountActivationStillMatch() {
         FakeJdbc jdbc = new FakeJdbc(1);
@@ -36,6 +67,17 @@ class UserDAOTest {
 
     private UserDAO dao(FakeJdbc jdbc) {
         return new UserDAO(jdbc::connection);
+    }
+
+    private static <T> T proxy(Class<T> type, MethodHandler handler) {
+        return type.cast(Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type},
+                (proxy, method, args) -> handler.invoke(
+                        method.getName(), args == null ? new Object[0] : args)));
+    }
+
+    @FunctionalInterface
+    private interface MethodHandler {
+        Object invoke(String method, Object[] args) throws Throwable;
     }
 
     private static final class FakeJdbc {

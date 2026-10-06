@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Base64;
 import java.security.SecureRandom;
 import security.ApiJson;
+import security.AuthenticationThrottle;
 import security.PasswordHasher;
 import security.SessionAttributes;
 import service.AuthenticatedAccount;
@@ -29,10 +30,23 @@ public final class LoginServlet extends HttpServlet {
     private static final Base64.Encoder TOKEN_ENCODER = Base64.getUrlEncoder().withoutPadding();
 
     private transient AuthenticationService authenticationService;
+    private final AuthenticationThrottle authenticationThrottle;
+
+    public LoginServlet() {
+        this(null, AuthenticationThrottle.shared());
+    }
+
+    LoginServlet(AuthenticationService authenticationService, AuthenticationThrottle authenticationThrottle) {
+        this.authenticationService = authenticationService;
+        this.authenticationThrottle = java.util.Objects.requireNonNull(
+                authenticationThrottle, "authenticationThrottle");
+    }
 
     @Override
     public void init() throws ServletException {
-        authenticationService = new AuthenticationService(new UserDAO(), new PasswordHasher());
+        if (authenticationService == null) {
+            authenticationService = new AuthenticationService(new UserDAO(), new PasswordHasher());
+        }
     }
 
     @Override
@@ -45,12 +59,17 @@ public final class LoginServlet extends HttpServlet {
         }
 
         char[] password = null;
+        String username = null;
         try {
             JsonObject body = ApiJson.parseObject(readBody(request));
-            String username = requiredString(body, "username");
+            username = requiredString(body, "username");
             password = requiredString(body, "password").toCharArray();
             body.remove("password");
+            if (writeThrottleResponseIfBlocked(request, response, username)) {
+                return;
+            }
             AuthenticatedAccount account = authenticationService.authenticate(username, password);
+            authenticationThrottle.recordSuccess(request.getRemoteAddr(), username);
             createAuthenticatedSession(request, account);
 
             JsonObject data = new JsonObject();
@@ -73,8 +92,13 @@ public final class LoginServlet extends HttpServlet {
             ApiJson.write(response, HttpServletResponse.SC_BAD_REQUEST,
                     ApiJson.error(exception.getMessage(), "INVALID_REQUEST"));
         } catch (AuthenticationException exception) {
-            ApiJson.write(response, exception.getHttpStatus(),
-                    ApiJson.error(exception.getMessage(), exception.getCode()));
+            if (exception.getHttpStatus() == HttpServletResponse.SC_UNAUTHORIZED) {
+                authenticationThrottle.recordFailure(request.getRemoteAddr(), username);
+            }
+            Object error = exception.getHttpStatus() == HttpServletResponse.SC_UNAUTHORIZED
+                    ? ApiJson.error("Invalid username or password", "INVALID_CREDENTIALS")
+                    : ApiJson.error(exception.getMessage(), exception.getCode());
+            ApiJson.write(response, exception.getHttpStatus(), error);
         } catch (PersistenceException exception) {
             getServletContext().log("Login account lookup failed", exception);
             ApiJson.write(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
@@ -84,6 +108,22 @@ public final class LoginServlet extends HttpServlet {
                 Arrays.fill(password, '\0');
             }
         }
+    }
+
+    private boolean writeThrottleResponseIfBlocked(
+            HttpServletRequest request,
+            HttpServletResponse response,
+            String username
+    ) throws IOException {
+        long retryAfter = authenticationThrottle.retryAfterSeconds(request.getRemoteAddr(), username);
+        if (retryAfter == 0) {
+            return false;
+        }
+        response.setHeader("Retry-After", Long.toString(retryAfter));
+        ApiJson.write(response, 429,
+                ApiJson.error("Authentication is temporarily unavailable. Try again later.",
+                        "AUTHENTICATION_THROTTLED"));
+        return true;
     }
 
     private void createAuthenticatedSession(

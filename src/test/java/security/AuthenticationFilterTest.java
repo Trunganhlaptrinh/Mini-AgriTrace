@@ -16,7 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthenticationFilterTest {
-    private final AuthenticationFilter filter = new AuthenticationFilter();
+    private final AuthenticationFilter filter = new AuthenticationFilter(userId -> true);
 
     @Test
     void permitsLoginWithoutAnExistingSession() throws Exception {
@@ -54,6 +54,25 @@ class AuthenticationFilterTest {
 
         assertTrue(chainCalled.get());
         assertEquals(0, response.status);
+    }
+
+    @Test
+    void invalidatesSessionWhenAccountOrCanonicalOrganizationIsUnavailable() throws Exception {
+        for (String path : new String[]{
+                "/api/v1/auth/me", "/api/v1/shipments/inbox", "/api/v1/batches/LOT-1/events"
+        }) {
+            AuthenticationFilter unavailableFilter = new AuthenticationFilter(userId -> false);
+            FakeSession session = new FakeSession(Map.of(SessionAttributes.USER_ID, 10L));
+            FakeResponse response = new FakeResponse();
+            AtomicBoolean chainCalled = new AtomicBoolean();
+
+            unavailableFilter.doFilter(request("GET", path, session.proxy()),
+                    response.proxy(), chainCalled(chainCalled));
+
+            assertFalse(chainCalled.get(), path);
+            assertEquals(401, response.status, path);
+            assertTrue(session.invalidated, path);
+        }
     }
 
     @Test
@@ -153,14 +172,21 @@ class AuthenticationFilterTest {
 
     private static final class FakeSession {
         private final Map<String, Object> attributes;
+        private boolean invalidated;
 
         private FakeSession(Map<String, Object> attributes) {
             this.attributes = attributes;
         }
 
         private HttpSession proxy() {
-            return AuthenticationFilterTest.proxy(HttpSession.class, (method, args) ->
-                    "getAttribute".equals(method) ? attributes.get(args[0]) : null);
+            return AuthenticationFilterTest.proxy(HttpSession.class, (method, args) -> switch (method) {
+                case "getAttribute" -> attributes.get(args[0]);
+                case "invalidate" -> {
+                    invalidated = true;
+                    yield null;
+                }
+                default -> null;
+            });
         }
     }
 

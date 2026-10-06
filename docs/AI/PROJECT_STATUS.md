@@ -81,9 +81,14 @@ These are repository-backed flow descriptions; the local acceptance verifies the
 
 - Password hashing, login/session, role and CSRF enforcement have automated coverage.
 - Session cookie configuration includes HttpOnly, Secure, and SameSite=Lax.
+- Canonical projection availability now requires organization status `ACTIVE`; protected requests recheck local account/canonical availability and invalidate unavailable sessions. Public trace/QR routes remain intentionally independent of account login state.
+- Login and current-password checks use a bounded in-memory throttle per JVM: 8 account failures or 30 remote-address failures within five minutes trigger a 60-second wait. Stale entries expire and storage is capped at 20,000 entries. Node counters are independent; this is not a network-wide limiter.
+- Common application responses include CSP, `X-Content-Type-Options`, `X-Frame-Options`, Referrer Policy, and Permissions Policy. The current same-origin CSP does not allow inline scripts/styles or `eval`. HSTS is intentionally deployment-specific and is not sent by the localhost demo.
 - Organization signatures and local private-key custody are separate from public manifest/network data.
 - Local TLS/mTLS worked with the demo CA and per-node identities. This does not establish production PKI suitability or operational rotation/revocation readiness.
-- Reviewed source did not contain explicit CSP, X-Content-Type-Options, X-Frame-Options, or HSTS response headers; these are hardening gaps to review for deployment. No CORS allow-origin header/implementation was found in the reviewed source.
+- No CORS allow-origin header/implementation was found in the reviewed source.
+- The controlled local-demo credential helper still uses the Windows clipboard temporarily; this is accepted for this workflow and remains unsuitable for a shared/untrusted workstation.
+- `currentHolder` remains the last confirmed holder during `IN_TRANSIT` and changes to the recipient after a valid `RECEIVED` event.
 - No formal penetration test, production threat-model review, or production secrets/key recovery exercise is evidenced.
 
 ## 8. Current UI State
@@ -146,7 +151,8 @@ No blocker remains for the local three-node demo happy path. Production deployme
 
 ## 16. Known Risks
 
-- Security response headers (CSP, X-Content-Type-Options, X-Frame-Options, HSTS) were not found in reviewed application source; assess and configure appropriately before internet-facing deployment.
+- Authentication throttling is local to each JVM and can be bypassed across nodes; production ingress still needs a deployment-appropriate rate limit if nodes are externally reachable.
+- HSTS remains unset for localhost; configure it only for stable HTTPS production hostnames and their intended subdomain scope.
 - No browser E2E suite validates client-side signing and rendered user flows.
 - Real-node adversarial fork choice, unregistered/revoked certificate rejection, and duplicate relay idempotency need separate acceptance evidence.
 - Production certificate/key rotation and recovery, secrets operations, monitoring, and backup/restore are not rehearsed.

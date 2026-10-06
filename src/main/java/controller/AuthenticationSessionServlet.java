@@ -18,6 +18,7 @@ import java.util.Base64;
 import service.AuthenticationException;
 import service.AuthenticationService;
 import security.ApiJson;
+import security.AuthenticationThrottle;
 import security.SessionAttributes;
 
 @WebServlet("/api/v1/auth/*")
@@ -27,10 +28,26 @@ public final class AuthenticationSessionServlet extends HttpServlet {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Base64.Encoder TOKEN_ENCODER = Base64.getUrlEncoder().withoutPadding();
     private transient AuthenticationService authenticationService;
+    private final AuthenticationThrottle authenticationThrottle;
+
+    public AuthenticationSessionServlet() {
+        this(null, AuthenticationThrottle.shared());
+    }
+
+    AuthenticationSessionServlet(
+            AuthenticationService authenticationService,
+            AuthenticationThrottle authenticationThrottle
+    ) {
+        this.authenticationService = authenticationService;
+        this.authenticationThrottle = java.util.Objects.requireNonNull(
+                authenticationThrottle, "authenticationThrottle");
+    }
 
     @Override
     public void init() {
-        authenticationService = new AuthenticationService(new UserDAO(), new security.PasswordHasher());
+        if (authenticationService == null) {
+            authenticationService = new AuthenticationService(new UserDAO(), new security.PasswordHasher());
+        }
     }
 
     @Override
@@ -115,13 +132,24 @@ public final class AuthenticationSessionServlet extends HttpServlet {
         }
         char[] currentPassword = null;
         char[] newPassword = null;
+        String username = null;
         try {
             HttpSession session = request.getSession(false);
-            if (session == null
-                    || !(session.getAttribute(SessionAttributes.USER_ID) instanceof Long userId)
-                    || !(session.getAttribute(SessionAttributes.USERNAME) instanceof String username)) {
+            Object sessionUserId = session == null ? null : session.getAttribute(SessionAttributes.USER_ID);
+            Object sessionUsername = session == null ? null : session.getAttribute(SessionAttributes.USERNAME);
+            if (!(sessionUserId instanceof Long userId) || !(sessionUsername instanceof String)) {
                 ApiJson.write(response, HttpServletResponse.SC_UNAUTHORIZED,
                         ApiJson.error("Authentication is required", "UNAUTHENTICATED"));
+                return;
+            }
+            username = (String) sessionUsername;
+            long retryAfter = authenticationThrottle.retryAfterSeconds(
+                    request.getRemoteAddr(), username);
+            if (retryAfter > 0) {
+                response.setHeader("Retry-After", Long.toString(retryAfter));
+                ApiJson.write(response, 429,
+                        ApiJson.error("Authentication is temporarily unavailable. Try again later.",
+                                "AUTHENTICATION_THROTTLED"));
                 return;
             }
             JsonObject body = ApiJson.parseObject(readBody(request));
@@ -130,6 +158,7 @@ public final class AuthenticationSessionServlet extends HttpServlet {
             body.remove("currentPassword");
             body.remove("newPassword");
             authenticationService.changePassword(userId, username, currentPassword, newPassword);
+            authenticationThrottle.recordSuccess(request.getRemoteAddr(), username);
 
             byte[] token = new byte[CSRF_TOKEN_BYTES];
             SECURE_RANDOM.nextBytes(token);
@@ -148,8 +177,14 @@ public final class AuthenticationSessionServlet extends HttpServlet {
             ApiJson.write(response, HttpServletResponse.SC_BAD_REQUEST,
                     ApiJson.error(exception.getMessage(), "INVALID_REQUEST"));
         } catch (AuthenticationException exception) {
+            if ("INVALID_CURRENT_PASSWORD".equals(exception.getCode())) {
+                authenticationThrottle.recordFailure(
+                        request.getRemoteAddr(), username);
+            }
             ApiJson.write(response, exception.getHttpStatus(),
-                    ApiJson.error(exception.getMessage(), exception.getCode()));
+                    "INVALID_CURRENT_PASSWORD".equals(exception.getCode())
+                            ? ApiJson.error("Current password is incorrect", "INVALID_CREDENTIALS")
+                            : ApiJson.error(exception.getMessage(), exception.getCode()));
         } catch (PersistenceException exception) {
             getServletContext().log("Password update failed", exception);
             ApiJson.write(response, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,

@@ -189,7 +189,7 @@ final class CanonicalProjectionDAO {
         }
     }
 
-    private static void updateLocalAccountOrganizationAvailability(Connection connection) throws SQLException {
+    static void updateLocalAccountOrganizationAvailability(Connection connection) throws SQLException {
         execute(connection, """
                 UPDATE users AS local_user
                 SET organization_canonical = (
@@ -198,6 +198,7 @@ final class CanonicalProjectionDAO {
                         SELECT 1
                         FROM organizations AS canonical_org
                         WHERE canonical_org.organization_id = local_user.organization_id
+                          AND canonical_org.status = 'ACTIVE'
                     )
                 )
                 """);

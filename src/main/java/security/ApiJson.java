@@ -25,6 +25,7 @@ public final class ApiJson {
 
     public static void write(HttpServletResponse response, int status, Object body)
             throws IOException {
+        SecurityResponseHeaders.apply(response);
         response.setStatus(status);
         response.setCharacterEncoding(StandardCharsets.UTF_8.name());
         response.setContentType("application/json");

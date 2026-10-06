@@ -54,7 +54,7 @@ public final class AuthenticationService {
         UserDAO.UserCredential user = result.get();
         if (!user.active() || !user.organizationCanonical()) {
             throw new AuthenticationException(
-                    "ACCOUNT_INACTIVE", "Account is inactive", 403);
+                    "INVALID_CREDENTIALS", "Invalid username or password", 401);
         }
         return new AuthenticatedAccount(
                 user.userId(), user.username(), user.role(), user.organizationId());

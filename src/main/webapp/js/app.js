@@ -527,6 +527,9 @@
 
         const trace = new URLSearchParams(window.location.search).get("trace");
         if (trace) {
+            // Show workspace shell so the lookup-view and trace-result are reachable
+            // even for unauthenticated visitors following a public QR / share link.
+            $("#workspace").hidden = false;
             activateView("lookup-view");
             $("#trace-batch-code").value = trace;
             await run(() => loadPublicTrace(trace));

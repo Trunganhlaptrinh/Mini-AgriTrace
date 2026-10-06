@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import model.BatchEvent;
 import model.Block;
@@ -38,6 +39,7 @@ import model.SignatureEnvelope;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -175,6 +177,129 @@ class ShipmentProposalServiceTest {
         assertEquals(ShipmentProposal.Status.SUBMITTED, received.status());
         assertEquals(received, duplicate);
         assertEquals(submitted.get(), senderNodeSubmission.get());
+    }
+
+    @Test
+    void duplicateCarrierEndorsementRelayAndRetryIsIdempotent() throws Exception {
+        KeyPair farmKeyPair = keyPair();
+        KeyPair carrierKeyPair = keyPair();
+        KeyPair warehouseKeyPair = keyPair();
+        Map<String, Organization> organizations = Map.of(
+                "farm-1", new Organization("farm-1", OrganizationType.FARMER, true),
+                "carrier-1", new Organization("carrier-1", OrganizationType.CARRIER, true),
+                "warehouse-1", new Organization("warehouse-1", OrganizationType.WAREHOUSE, true));
+        Map<String, OrganizationKey> keys = Map.of(
+                "farm-key", organizationKey("farm-key", "farm-1", farmKeyPair),
+                "carrier-key", organizationKey("carrier-key", "carrier-1", carrierKeyPair),
+                "warehouse-key", organizationKey("warehouse-key", "warehouse-1", warehouseKeyPair));
+        Fixture fixture = new Fixture(organizations, keys);
+        BatchEvent harvest = signedEvent(
+                fixture.blockchain, farmKeyPair, "farm-1", "farm-key", "FARMER_HARVEST",
+                EventType.HARVESTED, START.plusMillis(2), "MANGO-IDEM",
+                Map.of(
+                        "productType", "Mango",
+                        "variety", "Cat Hoa Loc",
+                        "harvestDate", "2026-10-04",
+                        "quantity", "12.000",
+                        "quantityUnit", "kg",
+                        "farmName", "Farm One",
+                        "province", "Tien Giang"));
+        fixture.mine(harvest);
+        BatchEvent packaged = signedEvent(
+                fixture.blockchain, farmKeyPair, "farm-1", "farm-key", "FARMER_PACKAGED",
+                EventType.PACKAGED, START.plusMillis(4), "MANGO-IDEM", Map.of());
+        fixture.mine(packaged);
+
+        Clock clock = Clock.fixed(START.plusSeconds(1), ZoneOffset.UTC);
+        MemoryProposalRepository carrierProposals = new MemoryProposalRepository();
+        AtomicInteger carrierSubmissions = new AtomicInteger();
+        AtomicInteger carrierRelays = new AtomicInteger();
+
+        ShipmentProposalService carrierService = new ShipmentProposalService(
+                NETWORK_ID,
+                fixture.blockchain,
+                carrierProposals,
+                event -> carrierSubmissions.incrementAndGet(),
+                ignored -> { },
+                (proposal, event) -> carrierRelays.incrementAndGet(),
+                clock);
+
+        String expiresAt = START.plusSeconds(30).toString();
+        Map<String, Object> shipmentData = Map.of(
+                "senderOrganizationId", "farm-1",
+                "carrierOrganizationId", "carrier-1",
+                "recipientOrganizationId", "warehouse-1",
+                "fromProvince", "Tien Giang",
+                "toProvince", "Ho Chi Minh City",
+                "expiresAt", expiresAt);
+        String eventId = UUID.randomUUID().toString();
+        BatchEvent unsignedProposal = new BatchEvent(
+                "pending", eventId, "MANGO-IDEM", EventType.SHIPPED,
+                START.plusMillis(5), shipmentData, List.of());
+        SignatureEnvelope senderSig = sign(
+                fixture.blockchain, unsignedProposal, farmKeyPair,
+                "farm-1", "farm-key", "SHIPMENT_SENDER");
+        ShipmentProposal proposal = new ShipmentProposal(
+                UUID.randomUUID().toString(),
+                new BatchEvent(
+                        "pending", eventId, "MANGO-IDEM", EventType.SHIPPED,
+                        unsignedProposal.eventTime(), shipmentData, List.of(senderSig)),
+                Instant.parse(expiresAt),
+                ShipmentProposal.Status.AWAITING_CARRIER,
+                null);
+
+        PeerRegistration senderPeer = new PeerRegistration(
+                "farm-peer", "farm-1", "https://farm.invalid/AgriTrace", "a".repeat(64), true);
+        PeerRegistration carrierPeer = new PeerRegistration(
+                "carrier-peer", "carrier-1", "https://carrier.invalid/AgriTrace", "b".repeat(64), true);
+
+        // 1. First proposal relay to carrier -> inserted
+        var r1 = carrierService.receiveFromPeer(senderPeer, carrierPeer, proposal);
+        assertTrue(r1.inserted());
+
+        // 2. Duplicate proposal relay to carrier -> idempotent, inserted is false
+        var r2 = carrierService.receiveFromPeer(senderPeer, carrierPeer, proposal);
+        assertFalse(r2.inserted());
+        assertEquals(r1.proposal().proposalId(), r2.proposal().proposalId());
+
+        // 3. Carrier endorses proposal
+        AuthenticatedAccount carrier = new AuthenticatedAccount(2, "carrier-user", "CARRIER", "carrier-1");
+        SignatureEnvelope carrierSig = sign(
+                fixture.blockchain, r1.proposal().event(), carrierKeyPair,
+                "carrier-1", "carrier-key", "SHIPMENT_CARRIER");
+        ShipmentProposal endorsed1 = carrierService.endorse(carrier, proposal.proposalId(), carrierSig);
+        assertEquals(ShipmentProposal.Status.SUBMITTED, endorsed1.status());
+        assertEquals(1, carrierSubmissions.get());
+        assertEquals(1, carrierRelays.get());
+
+        // 4. Carrier retries endorsement on already-SUBMITTED proposal -> idempotent!
+        ShipmentProposal endorsed2 = carrierService.endorse(carrier, proposal.proposalId(), carrierSig);
+        assertEquals(endorsed1.submittedTransactionId(), endorsed2.submittedTransactionId());
+        assertEquals(1, carrierSubmissions.get(), "Must not double-submit to blockchain pool");
+        assertEquals(2, carrierRelays.get(), "Re-relays the existing submitted event");
+
+        // 5. Sender receives endorsement and then receives duplicate
+        MemoryProposalRepository senderProposals = new MemoryProposalRepository();
+        senderProposals.insert(proposal);
+        AtomicInteger senderSubmissions = new AtomicInteger();
+        ShipmentProposalService senderService = new ShipmentProposalService(
+                NETWORK_ID,
+                fixture.blockchain,
+                senderProposals,
+                event -> senderSubmissions.incrementAndGet(),
+                ignored -> { },
+                (p, e) -> { },
+                clock);
+
+        ShipmentProposal senderRecv1 = senderService.receiveEndorsementFromPeer(
+                carrierPeer, senderPeer, proposal.proposalId(), endorsed1.event());
+        assertEquals(ShipmentProposal.Status.SUBMITTED, senderRecv1.status());
+        assertEquals(1, senderSubmissions.get());
+
+        ShipmentProposal senderRecv2 = senderService.receiveEndorsementFromPeer(
+                carrierPeer, senderPeer, proposal.proposalId(), endorsed1.event());
+        assertEquals(senderRecv1, senderRecv2);
+        assertEquals(1, senderSubmissions.get(), "Sender must not double-submit on duplicate endorsement relay");
     }
 
     @Test
@@ -377,7 +502,10 @@ class ShipmentProposalServiceTest {
 
         @Override
         public void insert(ShipmentProposal proposal) {
-            proposals.put(proposal.proposalId(), proposal);
+            if (proposals.putIfAbsent(proposal.proposalId(), proposal) != null) {
+                throw new dal.DuplicateTransactionException(
+                        "DUPLICATE_SHIPMENT_PROPOSAL", "Proposal ID or event ID is already in use", null);
+            }
         }
 
         @Override

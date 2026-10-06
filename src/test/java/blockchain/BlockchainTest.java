@@ -31,6 +31,7 @@ import service.TraceabilityService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BlockchainTest {
     private static final String NETWORK_ID = "agritrace-test";
@@ -82,6 +83,41 @@ class BlockchainTest {
                 () -> blockchain.processBlock(invalidTimestamp, List.of()));
 
         assertEquals(storedCount, repository.storedBlocks.size());
+    }
+
+    @Test
+    void convergesOnCompetingBranchWithHigherCumulativeWorkAndRejectsInvalidBlocks() {
+        blockchain.processBlock(genesis, List.of());
+
+        // Branch Alpha: Node 1 produces Block A1 off genesis
+        Block blockA1 = mine(genesis, GENESIS_TIME.plusMillis(1_000));
+        BlockProcessingResult resA1 = blockchain.processBlock(blockA1, List.of());
+        assertEquals(BlockRepository.StoreResult.CANONICAL_TIP_UPDATED, resA1.persistenceResult());
+        assertEquals(blockA1.hash(), resA1.canonicalState().tip().hash());
+
+        // Branch Beta: Node 2 produces Block B1 and Block B2 off genesis (strictly higher cumulative work)
+        Block blockB1 = mine(genesis, GENESIS_TIME.plusMillis(2_000));
+        Block blockB2 = mine(blockB1, GENESIS_TIME.plusMillis(3_000));
+
+        // Process blockB1 on its candidate branch
+        blockchain.processBlock(blockB1, List.of());
+
+        // Process blockB2: higher cumulative work than blockA1
+        assertTrue(blockB2.cumulativeWork().compareTo(blockA1.cumulativeWork()) > 0);
+        BlockProcessingResult resB2 = blockchain.processBlock(blockB2, List.of());
+
+        assertEquals(BlockRepository.StoreResult.CANONICAL_TIP_UPDATED, resB2.persistenceResult());
+        assertEquals(blockB2.hash(), resB2.canonicalState().tip().hash(),
+                "Node must reorg and converge on Branch Beta tip with higher cumulative work");
+
+        // Adversarial test: an invalid block on competing branch must be rejected
+        Block invalidCompeting = mine(blockA1, GENESIS_TIME.minusMillis(1_000)); // Non-monotonic timestamp
+        assertThrows(BlockValidationException.class,
+                () -> blockchain.processBlock(invalidCompeting, List.of()),
+                "Adversarial invalid block must be rejected and never become canonical");
+
+        // Canonical tip remains firmly on Branch Beta
+        assertEquals(blockB2.hash(), blockchain.loadCanonicalState().tip().hash());
     }
 
     @Test

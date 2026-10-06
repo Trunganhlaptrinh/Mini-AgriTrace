@@ -118,6 +118,8 @@ The first command is read-only. The second only targets the three isolated node 
 ## Testing
 
 - **Unit and web tests:** run as part of `mvn clean verify`.
+- **Browser E2E smoke suite:** run `node scripts/acceptance/Test-BrowserE2E.js` (headless Chrome CDP runner; verifies 14 UI/API steps across farmer, carrier, retailer, and public trace with zero console errors).
+- **Consensus & network acceptance matrix:** run `powershell -File scripts/acceptance/Test-MP01Matrix.ps1` (runs 22 targeted tests covering negative certificate rejection, duplicate relay idempotency, and cumulative-work fork choice convergence).
 - **MySQL persistence tests:** `AGRITRACE_DB_INTEGRATION=true` and `AGRITRACE_DB_BLOCK_INTEGRATION=true` enable existing suites. Use only a disposable isolated DB; the transaction suite uses temporary records and cleanup but does not itself prove DB isolation.
 - **Bootstrap recovery integration test:** separately opt in with `AGRITRACE_BOOTSTRAP_IT_ENABLED=true` and the dedicated settings documented in the operator guide. The test harness is hard-locked to `127.0.0.1:3306/agritrace_test` and a dedicated marker row; it does not fall back to `AGRITRACE_DB_URL` and never drops/recreates a database. Do not use the development catalog `agritrace`.
 - **Multi-node acceptance:** execute the live mTLS, convergence, fork, disconnect/retry, and restart scenarios in `docs/MULTI_NODE_ACCEPTANCE.md`. Unit tests do not replace this deployment verification.
@@ -126,4 +128,5 @@ The first command is read-only. The second only targets the three isolated node 
 
 Bootstrap state verification proves the stored network configuration, canonical blocks/transactions, replayed governance state, projection rows, node-local ADMIN record, configured local peer certificate, canonical manifest digest, and environment against the verified signed manifest. Existing databases need migration 003 before they can use this bootstrap identity check; the migration does not backfill prior network rows, so operators must review existing state before adopting bootstrap verification.
 
-Live three-node mTLS, servlet-container trust setup, browser end-to-end workflows, and production operations (deployment, monitoring, backup/restore, upgrade rehearsals) still need environment-specific verification. See [the current project status](docs/AI/PROJECT_STATUS.md).
+Live three-node mTLS, servlet-container trust setup, and browser end-to-end workflows have been verified locally with dedicated acceptance suites. Production operations across distributed physical hosts (external ingress, key rotation, backup/restore rehearsals) remain environment-specific. See [the current project status](docs/AI/PROJECT_STATUS.md).
+

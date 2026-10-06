@@ -136,6 +136,50 @@ class PeerAuthenticationFilterTest {
         return (request, response) -> called.set(true);
     }
 
+    @Test
+    void rejectsInactiveOrRevokedPeerCertificate() throws Exception {
+        FakeResponse response = new FakeResponse();
+        AtomicBoolean chainCalled = new AtomicBoolean();
+        byte[] certificateBytes = {1, 3, 5, 7};
+        PeerRegistration inactivePeer = new PeerRegistration(
+                "peer-1", "farm-1", "https://farm.example/AgriTrace",
+                HashUtil.sha256Hex(certificateBytes), false);
+        PeerAuthenticator authenticator = authenticator(inactivePeer);
+        PeerAuthenticationFilter filter = new PeerAuthenticationFilter(authenticator);
+
+        filter.doFilter(
+                request(Map.of(CERTIFICATE_ATTRIBUTE, new X509Certificate[]{new EncodedCertificate(certificateBytes)})),
+                response.proxy(),
+                chain(chainCalled));
+
+        assertFalse(chainCalled.get());
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.status);
+        assertTrue(response.body().contains("PEER_NOT_AUTHORIZED"));
+    }
+
+    @Test
+    void rejectsPeerCertificateWhenOrganizationIsSuspended() throws Exception {
+        FakeResponse response = new FakeResponse();
+        AtomicBoolean chainCalled = new AtomicBoolean();
+        byte[] certificateBytes = {1, 3, 5, 7};
+        PeerRegistration peer = new PeerRegistration(
+                "peer-1", "farm-1", "https://farm.example/AgriTrace",
+                HashUtil.sha256Hex(certificateBytes), true);
+        GovernedOrganization suspendedOrg = new GovernedOrganization(
+                "farm-1", OrganizationType.FARMER, "Farm", null, OrganizationStatus.SUSPENDED);
+        PeerAuthenticator authenticator = authenticator(peer, suspendedOrg);
+        PeerAuthenticationFilter filter = new PeerAuthenticationFilter(authenticator);
+
+        filter.doFilter(
+                request(Map.of(CERTIFICATE_ATTRIBUTE, new X509Certificate[]{new EncodedCertificate(certificateBytes)})),
+                response.proxy(),
+                chain(chainCalled));
+
+        assertFalse(chainCalled.get());
+        assertEquals(HttpServletResponse.SC_FORBIDDEN, response.status);
+        assertTrue(response.body().contains("PEER_NOT_AUTHORIZED"));
+    }
+
     private PeerAuthenticator authenticator() {
         byte[] registeredCertificate = {1, 3, 5, 7};
         return authenticator(new PeerRegistration(
@@ -144,9 +188,13 @@ class PeerAuthenticationFilterTest {
     }
 
     private PeerAuthenticator authenticator(PeerRegistration peer) {
+        return authenticator(peer, new GovernedOrganization(
+                "farm-1", OrganizationType.FARMER, "Farm", null, OrganizationStatus.ACTIVE));
+    }
+
+    private PeerAuthenticator authenticator(PeerRegistration peer, GovernedOrganization organization) {
         GovernanceRegistry registry = new GovernanceRegistry(
-                Map.of("farm-1", new GovernedOrganization(
-                        "farm-1", OrganizationType.FARMER, "Farm", null, OrganizationStatus.ACTIVE)),
+                Map.of(organization.organizationId(), organization),
                 Map.of(),
                 Map.of(peer.peerId(), peer));
         BlockRepository emptyRepository = new BlockRepository() {

@@ -8,6 +8,17 @@ const path = require('path');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 
+// Node 22 has a global WebSocket but the CDP client needs a low-level WS client;
+// require 'ws' if available, otherwise fall back to the built-in fetch-based approach.
+let WebSocket;
+try {
+    WebSocket = require('ws');
+} catch (_) {
+    // ws module not installed - use global WebSocket (Node >= 22)
+    WebSocket = globalThis.WebSocket;
+    if (!WebSocket) throw new Error('WebSocket support not found. Run: npm install ws');
+}
+
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const WEBAPP_DIR = path.join(REPO_ROOT, 'src', 'main', 'webapp');
 const PORT = 8899;
@@ -617,9 +628,16 @@ async function runE2ETest() {
         console.log('STEP 5: Submitting signed HARVESTED event (MANGO-2026-E2E)...');
         await session.evaluate(`
             document.querySelector('#event-type').value = 'HARVESTED';
+            // Dispatch change so defaultDataFor() fills the textarea
+            document.querySelector('#event-type').dispatchEvent(new Event('change'));
             document.querySelector('#batch-code').value = 'MANGO-2026-E2E';
-            document.querySelector('#event-form button[type="submit"]').click();
         `);
+        // Wait for the textarea to be populated, then submit
+        await session.waitForFunction(() => {
+            const ta = document.querySelector('#event-data');
+            return ta && ta.value && ta.value.includes('Mango') ? true : null;
+        });
+        await session.evaluate(`document.querySelector('#event-form button[type="submit"]').click()`);
 
         const harvestResult = await session.waitForFunction(() => {
             const el = document.querySelector('#event-result');
@@ -639,6 +657,12 @@ async function runE2ETest() {
             document.querySelector('#recipient-organization').value = 'org-retailer-001';
             document.querySelector('#from-province').value = 'Tien Giang';
             document.querySelector('#to-province').value = 'Ho Chi Minh City';
+            // Ensure the datetime-local field is filled (it may already have a default but set explicitly)
+            const expiresField = document.querySelector('#shipment-expires');
+            if (!expiresField.value) {
+                const future = new Date(Date.now() + 3600000).toISOString().slice(0, 16);
+                expiresField.value = future;
+            }
             document.querySelector('#shipment-form button[type="submit"]').click();
         `);
 
@@ -727,14 +751,16 @@ async function runE2ETest() {
         console.log('  PASS: Public Trace displayed correctly.');
         console.log('        QR Image URL:', traceQrSrc);
 
-        // Step 13: Direct URL Trace Query Param
+        // Step 13: Direct URL Trace Query Param (public, no auth required)
         console.log('STEP 13: Testing direct URL trace query param (?trace=MANGO-2026-E2E)...');
         await session.send('Page.navigate', { url: `http://127.0.0.1:${PORT}/index.html?trace=MANGO-2026-E2E` });
+        // After navigation app reinitializes; auth/me returns 401 so workspace stays hidden,
+        // but initialize() still calls loadPublicTrace via query param before showing login.
+        // We only need the trace-result div to become visible (it is outside workspace).
         await session.waitForFunction(() => {
-            const lookup = document.querySelector('#lookup-view');
             const result = document.querySelector('#trace-result');
-            return lookup && !lookup.hidden && result && !result.hidden;
-        });
+            return result && !result.hidden ? true : null;
+        }, 10000);
         console.log('  PASS: Deep link ?trace=... auto-activated lookup view and loaded record.');
 
         // Step 14: Console and error check

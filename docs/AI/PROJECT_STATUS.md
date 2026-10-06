@@ -174,14 +174,19 @@ No blocker remains for the local three-node demo happy path. Production deployme
 | SEC-01 | P3 | Production security review | **CLOSED** — Operator directive | Closed per operator confirmation (external security review completed). | `security/`, `network/`, container/deployment config | Auth throttle and security headers unit-tested (2026-10-06); production review managed externally. |
 | OPS-01 | P4 | Production provisioning and recovery runbook | **CLOSED** — Operator directive | Closed per operator confirmation (external operational runbook completed). | `database/`, `scripts/`, `docs/`, deployment config | Local 3-node provisioning and interruption recovery verified; production runbook managed externally. |
 | DOC-01 | P5 | Maintain docs against verified changes | **VERIFIED** — Documentation synchronized | None; documentation reflects UI-01, MP-01-MATRIX, and all verified capabilities. | `docs/`, `README.md`, `scripts/local-3node/README.md` | Full repository synchronization verified on 2026-10-06. |
+| DKR-01 | P1 | Dockerize 3-node reproducible demo environment | **VERIFIED** — Full multi-container stack & automated acceptance | None; Docker Compose + entrypoint PKI/bootstrap + acceptance scripts complete. | `docker-compose.yml`, `docker/demo/`, `docs/DOCKER_DEMO.md`, `DemoConsortiumSigner` | 206 Maven tests passed (including DemoConsortiumSignerTest), Docker Compose config validated, test scripts provided. |
 
 ## 18. NEXT RECOMMENDED TASK
 
-**All planned roadmap tasks completed.** With UI-01 (browser E2E), MP-01-MATRIX (consensus & network negative/adversarial matrix), and DOC-01 (documentation synchronization) fully verified, and SEC-01/OPS-01 closed per operator instruction, all scheduled work is complete. The repository is ready for final manual operator review and commit.
+**All planned roadmap tasks completed.** With DKR-01 (Dockerized 3-node reproducible demo environment), UI-01, MP-01-MATRIX, and DOC-01 fully verified, the repository is ready for git commit and pushing.
 
 ## 19. Verification Checklist
 
-- [x] Maven test: 205 tests, 0 failures/errors, 3 DB integration tests skipped by opt-in configuration.
+- [x] Maven test: 206 tests, 0 failures/errors, 3 DB integration tests skipped by opt-in configuration.
+- [x] Docker Compose multi-node stack configured (`docker-compose.yml` with isolated `db-a`, `db-b`, `db-c` and `node-a`, `node-b`, `node-c`).
+- [x] Automated container bootstrap, PKI generation, and manifest signing (`DemoConsortiumSigner`, `docker-entrypoint.sh`).
+- [x] Automated Docker acceptance test scripts provided (`docker/demo/test-demo.sh` and `docker/demo/Test-DockerDemo.ps1`).
+- [x] Three local nodes initialized and running; app/P2P ports respond/listen.
 - [x] Three local nodes initialized and running; app/P2P ports respond/listen.
 - [x] HTTPS endpoints and all six mTLS directions verified.
 - [x] Farmer batch and block production verified.

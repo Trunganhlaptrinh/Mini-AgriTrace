@@ -1,0 +1,210 @@
+services:
+  # ==============================================================
+  # Isolated Databases (MySQL 8.4) for Nodes A, B, and C
+  # ==============================================================
+  db-a:
+    image: mysql:8.4
+    container_name: agritrace-db-a
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: agritrace
+      MYSQL_USER: agritrace_app
+      MYSQL_PASSWORD: ${DB_A_PASSWORD:-agritrace_app_password_a}
+      MYSQL_ROOT_PASSWORD: ${DB_A_ROOT_PASSWORD:-agritrace_root_password_a}
+    ports:
+      - "127.0.0.1:${NODE_A_DB_PORT:-3317}:3306"
+    volumes:
+      - db-a-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - agritrace-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  db-b:
+    image: mysql:8.4
+    container_name: agritrace-db-b
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: agritrace
+      MYSQL_USER: agritrace_app
+      MYSQL_PASSWORD: ${DB_B_PASSWORD:-agritrace_app_password_b}
+      MYSQL_ROOT_PASSWORD: ${DB_B_ROOT_PASSWORD:-agritrace_root_password_b}
+    ports:
+      - "127.0.0.1:${NODE_B_DB_PORT:-3318}:3306"
+    volumes:
+      - db-b-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - agritrace-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  db-c:
+    image: mysql:8.4
+    container_name: agritrace-db-c
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: agritrace
+      MYSQL_USER: agritrace_app
+      MYSQL_PASSWORD: ${DB_C_PASSWORD:-agritrace_app_password_c}
+      MYSQL_ROOT_PASSWORD: ${DB_C_ROOT_PASSWORD:-agritrace_root_password_c}
+    ports:
+      - "127.0.0.1:${NODE_C_DB_PORT:-3319}:3306"
+    volumes:
+      - db-c-data:/var/lib/mysql
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    networks:
+      - agritrace-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  # ==============================================================
+  # AgriTrace Consortium Nodes (Tomcat 10.1 + Jakarta EE 10 WAR)
+  # ==============================================================
+  node-a:
+    build:
+      context: .
+      dockerfile: docker/demo/Dockerfile
+    container_name: agritrace-node-a
+    hostname: node-a
+    restart: unless-stopped
+    depends_on:
+      db-a:
+        condition: service_healthy
+    environment:
+      NODE_ID: "A"
+      NODE_ROLE: "FARMER"
+      PEER_ID: "peer-node-a-farmer"
+      ORG_ID: "org-farmer-a"
+      ADMIN_USERNAME: "admin-a"
+      ADMIN_PASSWORD: "${ADMIN_A_PASSWORD:-AdminA@123456}"
+      APP_PORT: "8443"
+      P2P_PORT: "9443"
+      AGRITRACE_DB_URL: "jdbc:mysql://db-a:3306/agritrace?serverTimezone=UTC"
+      AGRITRACE_DB_USERNAME: "agritrace_app"
+      AGRITRACE_DB_PASSWORD: "${DB_A_PASSWORD:-agritrace_app_password_a}"
+      SHARED_PKI_DIR: "/data/shared"
+      NODE_DATA_DIR: "/data/node-a"
+      NODE_A_P2P_HOST: "node-a"
+      NODE_B_P2P_HOST: "node-b"
+      NODE_C_P2P_HOST: "node-c"
+      NETWORK_ID: "agritrace-docker-demo-v1"
+      AGRITRACE_PUBLIC_BASE_URL: "https://localhost:8443/AgriTrace"
+    ports:
+      - "8443:8443"
+      - "9443:9443"
+    volumes:
+      - shared-pki:/data/shared
+      - node-a-data:/data/node-a
+    networks:
+      - agritrace-network
+
+  node-b:
+    build:
+      context: .
+      dockerfile: docker/demo/Dockerfile
+    container_name: agritrace-node-b
+    hostname: node-b
+    restart: unless-stopped
+    depends_on:
+      db-b:
+        condition: service_healthy
+      node-a:
+        condition: service_started
+    environment:
+      NODE_ID: "B"
+      NODE_ROLE: "CARRIER"
+      PEER_ID: "peer-node-b-carrier"
+      ORG_ID: "org-carrier-b"
+      ADMIN_USERNAME: "admin-b"
+      ADMIN_PASSWORD: "${ADMIN_B_PASSWORD:-AdminB@123456}"
+      APP_PORT: "8444"
+      P2P_PORT: "9444"
+      AGRITRACE_DB_URL: "jdbc:mysql://db-b:3306/agritrace?serverTimezone=UTC"
+      AGRITRACE_DB_USERNAME: "agritrace_app"
+      AGRITRACE_DB_PASSWORD: "${DB_B_PASSWORD:-agritrace_app_password_b}"
+      SHARED_PKI_DIR: "/data/shared"
+      NODE_DATA_DIR: "/data/node-b"
+      NODE_A_P2P_HOST: "node-a"
+      NODE_B_P2P_HOST: "node-b"
+      NODE_C_P2P_HOST: "node-c"
+      NETWORK_ID: "agritrace-docker-demo-v1"
+      AGRITRACE_PUBLIC_BASE_URL: "https://localhost:8444/AgriTrace"
+    ports:
+      - "8444:8444"
+      - "9444:9444"
+    volumes:
+      - shared-pki:/data/shared
+      - node-b-data:/data/node-b
+    networks:
+      - agritrace-network
+
+  node-c:
+    build:
+      context: .
+      dockerfile: docker/demo/Dockerfile
+    container_name: agritrace-node-c
+    hostname: node-c
+    restart: unless-stopped
+    depends_on:
+      db-c:
+        condition: service_healthy
+      node-a:
+        condition: service_started
+    environment:
+      NODE_ID: "C"
+      NODE_ROLE: "RETAILER"
+      PEER_ID: "peer-node-c-retailer"
+      ORG_ID: "org-retailer-c"
+      ADMIN_USERNAME: "admin-c"
+      ADMIN_PASSWORD: "${ADMIN_C_PASSWORD:-AdminC@123456}"
+      APP_PORT: "8445"
+      P2P_PORT: "9445"
+      AGRITRACE_DB_URL: "jdbc:mysql://db-c:3306/agritrace?serverTimezone=UTC"
+      AGRITRACE_DB_USERNAME: "agritrace_app"
+      AGRITRACE_DB_PASSWORD: "${DB_C_PASSWORD:-agritrace_app_password_c}"
+      SHARED_PKI_DIR: "/data/shared"
+      NODE_DATA_DIR: "/data/node-c"
+      NODE_A_P2P_HOST: "node-a"
+      NODE_B_P2P_HOST: "node-b"
+      NODE_C_P2P_HOST: "node-c"
+      NETWORK_ID: "agritrace-docker-demo-v1"
+      AGRITRACE_PUBLIC_BASE_URL: "https://localhost:8445/AgriTrace"
+    ports:
+      - "8445:8445"
+      - "9445:9445"
+    volumes:
+      - shared-pki:/data/shared
+      - node-c-data:/data/node-c
+    networks:
+      - agritrace-network
+
+volumes:
+  db-a-data:
+    name: agritrace-docker-db-a
+  db-b-data:
+    name: agritrace-docker-db-b
+  db-c-data:
+    name: agritrace-docker-db-c
+  shared-pki:
+    name: agritrace-docker-shared-pki
+  node-a-data:
+    name: agritrace-docker-node-a
+  node-b-data:
+    name: agritrace-docker-node-b
+  node-c-data:
+    name: agritrace-docker-node-c
+
+networks:
+  agritrace-network:
+    name: agritrace-demo-net

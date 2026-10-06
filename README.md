@@ -57,6 +57,35 @@ The P2P TLS server configuration is supplied by the servlet container/deployment
 | `docs/ARCHITECTURE.md` | Architecture and request flows |
 | `docs/MULTI_NODE_ACCEPTANCE.md` | Multi-node mTLS acceptance procedure |
 | `docs/AI/PROJECT_STATUS.md` | Verified implementation status and roadmap |
+## Reproducible 3-Node Docker Demo
+
+For rapid evaluation and reproducing the full multi-node consortium environment locally:
+
+```shell
+docker compose up --build -d
+```
+
+This single command automatically:
+- Provisions 3 isolated MySQL databases (`db-a`, `db-b`, `db-c`) with fresh schemas.
+- Generates demo consortium PKI (CA, server certs, peer certs, and P-256 signing keys).
+- Mines and signs the consortium bootstrap manifest.
+- Bootstraps each node against the manifest and starts 3 Tomcat instances.
+
+### Access Points
+- **Node A (Farmer):** [https://localhost:8443/AgriTrace](https://localhost:8443/AgriTrace) (`admin-a` / `AdminA@123456`)
+- **Node B (Carrier):** [https://localhost:8444/AgriTrace](https://localhost:8444/AgriTrace) (`admin-b` / `AdminB@123456`)
+- **Node C (Retailer):** [https://localhost:8445/AgriTrace](https://localhost:8445/AgriTrace) (`admin-c` / `AdminC@123456`)
+
+### Run Automated Acceptance Test
+```shell
+# Linux / macOS / Git Bash:
+bash docker/demo/test-demo.sh
+
+# Windows PowerShell:
+powershell -ExecutionPolicy Bypass -File docker/demo/Test-DockerDemo.ps1
+```
+
+See [docs/DOCKER_DEMO.md](docs/DOCKER_DEMO.md) for detailed configuration, client-side signing keys, and teardown instructions.
 
 ## Requirements and local build
 

@@ -62,9 +62,20 @@ public final class ConsortiumBootstrapCli {
                                     new WindowsCredentialManager());
                             System.out.println("Bootstrap completed and verified for network " + status.networkId());
                         } else {
-                            if (console == null) throw new IllegalStateException("Creating the local ADMIN requires an interactive secure console");
-                            password = console.readPassword("New local ADMIN password: ");
-                            confirmation = console.readPassword("Confirm local ADMIN password: ");
+                            if (console != null) {
+                                password = console.readPassword("New local ADMIN password: ");
+                                confirmation = console.readPassword("Confirm local ADMIN password: ");
+                            } else {
+                                java.io.BufferedReader reader = new java.io.BufferedReader(
+                                        new java.io.InputStreamReader(System.in, StandardCharsets.UTF_8));
+                                String p1 = reader.readLine();
+                                String p2 = reader.readLine();
+                                if (p1 == null || p2 == null) {
+                                    throw new IllegalStateException("Creating the local ADMIN requires interactive console or password lines on stdin");
+                                }
+                                password = p1.toCharArray();
+                                confirmation = p2.toCharArray();
+                            }
                             if (!java.util.Arrays.equals(password, confirmation))
                                 throw new IllegalArgumentException("Password confirmation did not match");
                             service.initialize(json, args[2], password);

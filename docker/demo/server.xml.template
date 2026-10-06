@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server port="@SHUTDOWN_PORT@" shutdown="SHUTDOWN">
+  <Listener className="org.apache.catalina.startup.VersionLoggerListener" />
+  <Listener className="org.apache.catalina.core.AprLifecycleListener" SSLEngine="on" />
+  <Listener className="org.apache.catalina.core.JreMemoryLeakPreventionListener" />
+  <Listener className="org.apache.catalina.mbeans.GlobalResourcesLifecycleListener" />
+  <Listener className="org.apache.catalina.core.ThreadLocalLeakPreventionListener" />
+  <GlobalNamingResources />
+  <Service name="Catalina">
+    <!-- App HTTPS Connector (Browser Web UI + REST API) -->
+    <Connector port="@APP_PORT@" protocol="org.apache.coyote.http11.Http11NioProtocol" SSLEnabled="true" maxThreads="100">
+      <SSLHostConfig protocols="TLSv1.2,TLSv1.3">
+        <Certificate certificateKeystoreFile="@APP_SERVER_KEYSTORE@" certificateKeystorePassword="@APP_SERVER_PASSWORD@" certificateKeystoreType="PKCS12" />
+      </SSLHostConfig>
+    </Connector>
+    <!-- P2P mTLS Connector (Node-to-node replication & endorsement) -->
+    <Connector port="@P2P_PORT@" protocol="org.apache.coyote.http11.Http11NioProtocol" SSLEnabled="true" maxThreads="100">
+      <SSLHostConfig protocols="TLSv1.2,TLSv1.3" certificateVerification="required" truststoreFile="@P2P_CLIENT_TRUSTSTORE@" truststorePassword="@P2P_CLIENT_TRUSTSTORE_PASSWORD@" truststoreType="PKCS12">
+        <Certificate certificateKeystoreFile="@P2P_SERVER_KEYSTORE@" certificateKeystorePassword="@P2P_SERVER_PASSWORD@" certificateKeystoreType="PKCS12" />
+      </SSLHostConfig>
+    </Connector>
+    <Engine name="Catalina" defaultHost="localhost">
+      <Host name="localhost" appBase="webapps" unpackWARs="true" autoDeploy="false" deployOnStartup="true">
+        <Valve className="org.apache.catalina.valves.AccessLogValve" directory="logs" prefix="localhost_access_log" suffix=".txt" pattern="%h %l %u %t &quot;%r&quot; %s %b" />
+      </Host>
+    </Engine>
+  </Service>
+</Server>
